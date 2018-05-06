@@ -62,6 +62,13 @@ const (
 	//InterestObjectType    = "Interest"
 )
 
+type SecurityTotal struct {
+	BankID       string `json:"BankID"`
+	TotalBalance int64  `json:"TotalBalance"`
+	CreateTime   string `json:"CreateTime"`
+	UpdateTime   string `json:"UpdateTime"`
+}
+
 type Owner struct {
 	OwnedAccountID        string   `json:"OwnedAccountID"`
 	OwnedBankID           string   `json:"OwnedBankID"`
@@ -87,17 +94,19 @@ type Owner struct {
 //Book/Entry Central Government Securities (CGS)中央登錄公債
 // Define the Security structure, with 7 properties.  Structure tags are used by encoding/json library
 type Security struct {
-	ObjectType     string  `json:"docType"` //docType is used to distinguish the various types of objects in state database
-	SecurityID     string  `json:"SecurityID"`
-	SecurityName   string  `json:"SecurityName"`
-	IssueDate      string  `json:"IssueDate"`
-	MaturityDate   string  `json:"MaturityDate"`
-	InterestRate   float64 `json:"InterestRate"`
-	RepayPeriod    int     `json:"RepayPeriod"`
-	TotalAmount    int64   `json:"TotalQuantity"`
-	Balance        int64   `json:"Balance"`
-	SecurityStatus int     `json:"SecurityStatus"`
-	Owners         []Owner `json:"Owners"`
+	ObjectType           string          `json:"docType"` //docType is used to distinguish the various types of objects in state database
+	SecurityID           string          `json:"SecurityID"`
+	SecurityName         string          `json:"SecurityName"`
+	IssueDate            string          `json:"IssueDate"`
+	MaturityDate         string          `json:"MaturityDate"`
+	InterestRate         float64         `json:"InterestRate"`
+	RepayPeriod          int             `json:"RepayPeriod"`
+	TotalAmount          int64           `json:"TotalQuantity"`
+	Balance              int64           `json:"Balance"`
+	SecurityStatus       int             `json:"SecurityStatus"`
+	Owners               []Owner         `json:"Owners"`
+	SecurityTotals       []SecurityTotal `json:"SecurityTotals"`
+	SecurityDurationDate []string        `json:"SecurityDurationDate"`
 }
 
 /*
@@ -111,6 +120,8 @@ type Security struct {
  8.公債剩餘總額：_______
  9.公債狀態：__
  10.登錄之清算銀行清單：
+ 11.公債持有銀行的總額：
+ 11.公債每一期付息的日期：
 */
 
 /*
@@ -441,6 +452,9 @@ func (s *SmartContract) initLedger(APIstub shim.ChaincodeStubInterface, args []s
 	for i < len(Securities) {
 		//fmt.Println("i is ", i)
 		var owner Owner
+		var securityTotal SecurityTotal
+
+		TimeNow := time.Now().Format(timelayout)
 
 		if i < 9 {
 			owner.OwnedAccountID = args[0] + SubString("00000000"+strconv.Itoa(i+1), 0, 9)
@@ -453,15 +467,28 @@ func (s *SmartContract) initLedger(APIstub shim.ChaincodeStubInterface, args []s
 		owner.OwnedInterest = int64(round(perDayMillionInterest*daySub(Securities[i].IssueDate, Securities[i].MaturityDate)*Securities[i].InterestRate, 0))
 		owner.OwnedDurationInterest = owner.OwnedInterest / int64(Securities[i].RepayPeriod)
 		j := 0
+		var SecurityDurationDate []string
 		for j < Securities[i].RepayPeriod {
 			NextPayInterestDate, _ := generateMaturity(Securities[i].IssueDate, j+1, 0, 0)
 			owner.OwnedDurationDate = append(owner.OwnedDurationDate, NextPayInterestDate)
+			SecurityDurationDate = append(SecurityDurationDate, NextPayInterestDate)
 			j = j + 1
 		}
 		owner.OwnedRepay = unitAmount + owner.OwnedInterest
 		owner.Avaliable = 0
-
 		Securities[i].Owners = append(Securities[i].Owners, owner)
+
+		err := updateBankTotals(APIstub, args[0], Securities[i].SecurityID, Securities[i].Balance, false)
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+		securityTotal.BankID = args[0]
+		securityTotal.TotalBalance = Securities[i].Balance
+		securityTotal.CreateTime = TimeNow
+		securityTotal.UpdateTime = TimeNow
+		Securities[i].SecurityTotals = append(Securities[i].SecurityTotals, securityTotal)
+		Securities[i].SecurityDurationDate = SecurityDurationDate
+
 		Securities[i].TotalAmount = 25000 * unitAmount
 		Securities[i].Balance = Securities[i].TotalAmount - owner.OwnedAmount
 		SecurityAsBytes, _ := json.Marshal(Securities[i])
@@ -610,16 +637,16 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 	Security.RepayPeriod = newRepayPeriod
 	Security.TotalAmount = newAmount
 
-	err = updateBankTotals(APIstub, args[8], args[0], newOwnedAmount, false)
-	if err != nil {
-		return shim.Error("Failed to change banktotal state")
-	}
-
 	var doflg bool
 	doflg = false
 	var OwnedDurationDate []string
+	var oldOwnedAmount int64
+	var newBalance int64
+	oldOwnedAmount = 0
+	newBalance = 0
 	for key, val := range Security.Owners {
 		if val.OwnedAccountID == args[7] {
+			oldOwnedAmount = Security.Owners[key].OwnedAmount
 			Security.Balance += Security.Owners[key].OwnedAmount
 			Security.Owners[key].OwnedBankID = args[8]
 			Security.Owners[key].OwnedAmount = newOwnedAmount
@@ -628,13 +655,15 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 			Security.Owners[key].OwnedInterest = int64(OwnedInterest)
 			Security.Owners[key].OwnedDurationInterest = Security.Owners[key].OwnedInterest / int64(Security.RepayPeriod)
 			j := 0
-
+			var SecurityDurationDate []string
 			for j < Security.RepayPeriod {
 				NextPayInterestDate, _ := generateMaturity(Security.IssueDate, j+1, 0, 0)
 				OwnedDurationDate = append(OwnedDurationDate, NextPayInterestDate)
+				SecurityDurationDate = append(SecurityDurationDate, NextPayInterestDate)
 				j = j + 1
 			}
 			Security.Owners[key].OwnedDurationDate = OwnedDurationDate
+			Security.SecurityDurationDate = SecurityDurationDate
 			Security.Owners[key].OwnedRepay = newOwnedAmount + Security.Owners[key].OwnedInterest
 			Security.Owners[key].Avaliable = newAvaliable
 			Security.Balance -= Security.Owners[key].OwnedAmount
@@ -642,6 +671,19 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 			break
 		}
 	}
+	fmt.Printf("oldOwnedAmount: %d\n", oldOwnedAmount)
+	if oldOwnedAmount > 0 {
+		newBalance = newOwnedAmount - oldOwnedAmount
+		fmt.Printf("newBalance: %d\n", newBalance)
+		err = updateBankTotals(APIstub, args[8], args[0], newBalance, false)
+	} else {
+		err = updateBankTotals(APIstub, args[8], args[0], newOwnedAmount, false)
+	}
+
+	if err != nil {
+		return shim.Error("Failed to change banktotal state")
+	}
+
 	if doflg != true {
 		var owner Owner
 		owner.OwnedAccountID = args[7]
@@ -650,15 +692,47 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 		owner.OwnedInterest = int64(round(perDayMillionInterest*daySub(Security.IssueDate, Security.MaturityDate)*Security.InterestRate, 0)) * int64(newOwnedAmount/unitAmount)
 		owner.OwnedDurationInterest = owner.OwnedInterest / int64(Security.RepayPeriod)
 		j := 0
+		var SecurityDurationDate []string
 		for j < Security.RepayPeriod {
 			NextPayInterestDate, _ := generateMaturity(Security.IssueDate, j+1, 0, 0)
 			owner.OwnedDurationDate = append(owner.OwnedDurationDate, NextPayInterestDate)
+			SecurityDurationDate = append(SecurityDurationDate, NextPayInterestDate)
 			j = j + 1
 		}
 		owner.OwnedRepay = newOwnedAmount + owner.OwnedInterest
 		owner.Avaliable = newAvaliable
 		Security.Owners = append(Security.Owners, owner)
+		Security.SecurityDurationDate = SecurityDurationDate
 		Security.Balance -= newOwnedAmount
+	}
+
+	doflg = false
+	var securityTotal SecurityTotal
+	BankID := args[8]
+	TimeNow := time.Now().Format(timelayout)
+
+	fmt.Printf("BankID=%s\n", BankID)
+	for key, val := range Security.SecurityTotals {
+		fmt.Printf("1.Skey: %d\n", key)
+		fmt.Printf("2.Sval: %s\n", val)
+		if val.BankID == BankID {
+			fmt.Printf("3.Skey: %d\n", key)
+			fmt.Printf("4.Sval: %s\n", val)
+			fmt.Printf("oldOwnedAmount: %d\n", oldOwnedAmount)
+			Security.SecurityTotals[key].TotalBalance -= oldOwnedAmount
+			Security.SecurityTotals[key].TotalBalance += newOwnedAmount
+			Security.SecurityTotals[key].UpdateTime = TimeNow
+			doflg = true
+			break
+
+		}
+	}
+	if doflg != true {
+		securityTotal.BankID = BankID
+		securityTotal.TotalBalance = newOwnedAmount
+		securityTotal.CreateTime = TimeNow
+		securityTotal.UpdateTime = TimeNow
+		Security.SecurityTotals = append(Security.SecurityTotals, securityTotal)
 	}
 
 	SecurityAsBytes, _ = json.Marshal(Security)
@@ -722,13 +796,16 @@ func (s *SmartContract) updateSecurityInterest(APIstub shim.ChaincodeStubInterfa
 			Security.Owners[key].OwnedInterest = int64(round(perDayMillionInterest*daySub(Security.IssueDate, Security.MaturityDate)*Security.InterestRate, 0)) * int64(newOwnedAmount/unitAmount)
 			Security.Owners[key].OwnedDurationInterest = Security.Owners[key].OwnedInterest / int64(Security.RepayPeriod)
 			j := 0
+			var SecurityDurationDate []string
 			for j < Security.RepayPeriod {
 				NextPayInterestDate, _ := generateMaturity(Security.IssueDate, j+1, 0, 0)
 				Security.Owners[key].OwnedDurationDate = append(Security.Owners[key].OwnedDurationDate, NextPayInterestDate)
+				SecurityDurationDate = append(SecurityDurationDate, NextPayInterestDate)
 				j = j + 1
 			}
 			Security.Owners[key].OwnedRepay = newOwnedAmount + Security.Owners[key].OwnedInterest
 			Security.Owners[key].Avaliable = newAvaliable
+			Security.SecurityDurationDate = SecurityDurationDate
 			Security.Balance -= Security.Owners[key].OwnedAmount
 			doflg = true
 			break
@@ -742,14 +819,17 @@ func (s *SmartContract) updateSecurityInterest(APIstub shim.ChaincodeStubInterfa
 		owner.OwnedInterest = int64(round(perDayMillionInterest*daySub(Security.IssueDate, Security.MaturityDate)*Security.InterestRate, 0)) * int64(newOwnedAmount/unitAmount)
 		owner.OwnedDurationInterest = owner.OwnedInterest / int64(Security.RepayPeriod)
 		j := 0
+		var SecurityDurationDate []string
 		for j < Security.RepayPeriod {
 			NextPayInterestDate, _ := generateMaturity(Security.IssueDate, j+1, 0, 0)
 			owner.OwnedDurationDate = append(owner.OwnedDurationDate, NextPayInterestDate)
+			SecurityDurationDate = append(SecurityDurationDate, NextPayInterestDate)
 			j = j + 1
 		}
 		owner.OwnedRepay = newOwnedAmount + owner.OwnedInterest
 		owner.Avaliable = newAvaliable
 		Security.Owners = append(Security.Owners, owner)
+		Security.SecurityDurationDate = SecurityDurationDate
 		Security.Balance -= newOwnedAmount
 	}
 
@@ -1162,6 +1242,55 @@ func (s *SmartContract) queryAllSecurityKeys(APIstub shim.ChaincodeStubInterface
 
 	return shim.Success(jsonKeys)
 
+}
+
+func updateSecurityTotals(stub shim.ChaincodeStubInterface, SecurityID string, BankID string, Amount int64, isNegative bool) error {
+	fmt.Printf("updateSecurityTotals: SecurityID=%s,BankID=%s,Amount=%d\n", SecurityID, BankID, Amount)
+	TimeNow := time.Now().Format(timelayout)
+	newSecurityID := SecurityID
+	security, err := getSecurityStructFromID(stub, newSecurityID)
+	fmt.Printf("new newSecurityID=%s\n", newSecurityID)
+	if err != nil {
+		return err
+	}
+	var doflg bool
+	doflg = false
+	var securityTotal SecurityTotal
+	fmt.Printf("BankID=%s\n", BankID)
+	for key, val := range security.SecurityTotals {
+		fmt.Printf("1.Skey: %d\n", key)
+		fmt.Printf("2.Sval: %s\n", val)
+		if val.BankID == BankID {
+			fmt.Printf("3.Skey: %d\n", key)
+			fmt.Printf("4.Sval: %s\n", val)
+			if isNegative != true {
+				security.SecurityTotals[key].TotalBalance += Amount
+			} else if isNegative == true {
+				security.SecurityTotals[key].TotalBalance -= Amount
+			}
+
+			security.SecurityTotals[key].UpdateTime = TimeNow
+			doflg = true
+			break
+		}
+	}
+	if doflg != true {
+		securityTotal.BankID = BankID
+		securityTotal.TotalBalance = Amount
+		securityTotal.CreateTime = TimeNow
+		securityTotal.UpdateTime = TimeNow
+		security.SecurityTotals = append(security.SecurityTotals, securityTotal)
+	}
+
+	securityAsBytes, err := json.Marshal(security)
+	if err != nil {
+		return err
+	}
+	err = stub.PutState(newSecurityID, securityAsBytes)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // The main function is only relevant in unit test mode. Only included here for completeness.

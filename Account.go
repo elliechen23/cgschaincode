@@ -127,6 +127,12 @@ func (s *SmartContract) initAccount(
 	if err != nil {
 		return shim.Error(err.Error())
 	}
+
+	err = updateBankAccounts(stub, BankID, AccountID)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
 	return shim.Success(accountAsBytes)
 }
 

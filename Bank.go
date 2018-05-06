@@ -17,11 +17,12 @@ const BankObjectType string = "Bank"
 const AdminBankID string = "CBC"
 
 type Bank struct {
-	ObjectType string      `json:"docType"`  // default set to "Bank"
-	BankID     string      `json:"BankID"`   // BANK002,BANK004,BANKCBC
-	BankName   string      `json:"BankName"` // BANK 002, BANK 004, BANK CBC
-	BankCode   string      `json:"BankCode"` // BankCode (002,004,999)
-	BankTotals []BankTotal `json:"BankTotals"`
+	ObjectType   string      `json:"docType"`  // default set to "Bank"
+	BankID       string      `json:"BankID"`   // BANK002,BANK004,BANKCBC
+	BankName     string      `json:"BankName"` // BANK 002, BANK 004, BANK CBC
+	BankCode     string      `json:"BankCode"` // BankCode (002,004,999)
+	BankTotals   []BankTotal `json:"BankTotals"`
+	BankAccounts []string    `json:"BankAccounts"`
 }
 
 type BankTotal struct {
@@ -421,15 +422,16 @@ func getBankStructFromID(
 func updateBankTotals(stub shim.ChaincodeStubInterface, BankID string, SecurityID string, Amount int64, isNegative bool) error {
 	fmt.Printf("updateBankTotals: BankID=%s,SecurityID=%s,Amount=%d\n", BankID, SecurityID, Amount)
 	TimeNow := time.Now().Format(timelayout)
-	bankid := "BANK" + SubString(BankID, 0, 3)
-	bank, err := getBankStructFromID(stub, bankid)
+	newbankid := "BANK" + SubString(BankID, 0, 3)
+	bank, err := getBankStructFromID(stub, newbankid)
+	fmt.Printf("new BankID=%s\n", newbankid)
 	if err != nil {
 		return err
 	}
 	var doflg bool
 	doflg = false
 	var bankTotal BankTotal
-
+	fmt.Printf("SecurityID=%s\n", SecurityID)
 	for key, val := range bank.BankTotals {
 		fmt.Printf("1.Bkey: %d\n", key)
 		fmt.Printf("2.Bval: %s\n", val)
@@ -459,7 +461,46 @@ func updateBankTotals(stub shim.ChaincodeStubInterface, BankID string, SecurityI
 	if err != nil {
 		return err
 	}
-	err = stub.PutState(BankID, bankAsBytes)
+	err = stub.PutState(newbankid, bankAsBytes)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func updateBankAccounts(stub shim.ChaincodeStubInterface, BankID string, AccountID string) error {
+	fmt.Printf("updateBankAccounts: BankID=%s,AccountID=%s\n", BankID, AccountID)
+
+	newbankid := "BANK" + SubString(BankID, 0, 3)
+	bank, err := getBankStructFromID(stub, newbankid)
+	fmt.Printf("new BankID=%s\n", newbankid)
+	if err != nil {
+		return err
+	}
+
+	var doflg bool
+	doflg = false
+
+	for key, val := range bank.BankAccounts {
+		fmt.Printf("akey1: %d\n", key)
+		fmt.Printf("aval1: %s\n", val)
+
+		if val == AccountID {
+			fmt.Printf("akey2: %d\n", key)
+			fmt.Printf("aval2: %s\n", val)
+			doflg = true
+			break
+		}
+	}
+	if doflg != true {
+		bank.BankAccounts = append(bank.BankAccounts, AccountID)
+	}
+
+	bankAsBytes, err := json.Marshal(bank)
+	if err != nil {
+		return err
+	}
+	err = stub.PutState(newbankid, bankAsBytes)
 	if err != nil {
 		return err
 	}
