@@ -28,8 +28,9 @@ type Bank struct {
 type BankTotal struct {
 	SecurityID   string `json:"SecurityID"`
 	TotalBalance int64  `json:"TotalBalance"`
-	CreateTime   string `json:"CreateTime"`
-	UpdateTime   string `json:"UpdateTime"`
+	//TotalInterest int64  `json:"TotalInterest"`
+	CreateTime string `json:"CreateTime"`
+	UpdateTime string `json:"UpdateTime"`
 }
 
 /*
@@ -440,8 +441,10 @@ func updateBankTotals(stub shim.ChaincodeStubInterface, BankID string, SecurityI
 			fmt.Printf("4.Bval: %s\n", val)
 			if isNegative != true {
 				bank.BankTotals[key].TotalBalance += Amount
+				//bank.BankTotals[key].TotalInterest += Interest
 			} else if isNegative == true {
 				bank.BankTotals[key].TotalBalance -= Amount
+				//bank.BankTotals[key].TotalInterest -= Interest
 			}
 
 			bank.BankTotals[key].UpdateTime = TimeNow
@@ -452,6 +455,7 @@ func updateBankTotals(stub shim.ChaincodeStubInterface, BankID string, SecurityI
 	if doflg != true {
 		bankTotal.SecurityID = SecurityID
 		bankTotal.TotalBalance = Amount
+		//bankTotal.TotalInterest = Interest
 		bankTotal.CreateTime = TimeNow
 		bankTotal.UpdateTime = TimeNow
 		bank.BankTotals = append(bank.BankTotals, bankTotal)

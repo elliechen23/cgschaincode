@@ -63,10 +63,13 @@ const (
 )
 
 type SecurityTotal struct {
-	BankID       string `json:"BankID"`
-	TotalBalance int64  `json:"TotalBalance"`
-	CreateTime   string `json:"CreateTime"`
-	UpdateTime   string `json:"UpdateTime"`
+	BankID               string `json:"BankID"`
+	TotalBalance         int64  `json:"TotalBalance"`
+	TotalInterest        int64  `json:"TotalInterest"`
+	DurationInterest     int64  `json:"DurationInterest"`
+	PaidDurationInterest int64  `json:"PaidDurationInterest"`
+	CreateTime           string `json:"CreateTime"`
+	UpdateTime           string `json:"UpdateTime"`
 }
 
 type Owner struct {
@@ -101,7 +104,7 @@ type Security struct {
 	MaturityDate         string          `json:"MaturityDate"`
 	InterestRate         float64         `json:"InterestRate"`
 	RepayPeriod          int             `json:"RepayPeriod"`
-	TotalAmount          int64           `json:"TotalQuantity"`
+	TotalAmount          int64           `json:"TotalAmount"`
 	Balance              int64           `json:"Balance"`
 	SecurityStatus       int             `json:"SecurityStatus"`
 	Owners               []Owner         `json:"Owners"`
@@ -455,6 +458,7 @@ func (s *SmartContract) initLedger(APIstub shim.ChaincodeStubInterface, args []s
 		var securityTotal SecurityTotal
 
 		TimeNow := time.Now().Format(timelayout)
+		Today := SubString(TimeNow, 0, 8)
 
 		if i < 9 {
 			owner.OwnedAccountID = args[0] + SubString("00000000"+strconv.Itoa(i+1), 0, 9)
@@ -468,10 +472,16 @@ func (s *SmartContract) initLedger(APIstub shim.ChaincodeStubInterface, args []s
 		owner.OwnedDurationInterest = owner.OwnedInterest / int64(Securities[i].RepayPeriod)
 		j := 0
 		var SecurityDurationDate []string
+		var PaidDurationInterest int64
+		PaidDurationInterest = 0
+
 		for j < Securities[i].RepayPeriod {
 			NextPayInterestDate, _ := generateMaturity(Securities[i].IssueDate, j+1, 0, 0)
 			owner.OwnedDurationDate = append(owner.OwnedDurationDate, NextPayInterestDate)
 			SecurityDurationDate = append(SecurityDurationDate, NextPayInterestDate)
+			if Today >= NextPayInterestDate {
+				PaidDurationInterest = owner.OwnedInterest * int64(j+1)
+			}
 			j = j + 1
 		}
 		owner.OwnedRepay = unitAmount + owner.OwnedInterest
@@ -484,11 +494,13 @@ func (s *SmartContract) initLedger(APIstub shim.ChaincodeStubInterface, args []s
 		}
 		securityTotal.BankID = args[0]
 		securityTotal.TotalBalance = Securities[i].Balance
+		securityTotal.TotalInterest += owner.OwnedInterest
+		securityTotal.DurationInterest = securityTotal.TotalInterest / int64(Securities[i].RepayPeriod)
+		securityTotal.PaidDurationInterest = PaidDurationInterest
 		securityTotal.CreateTime = TimeNow
 		securityTotal.UpdateTime = TimeNow
 		Securities[i].SecurityTotals = append(Securities[i].SecurityTotals, securityTotal)
 		Securities[i].SecurityDurationDate = SecurityDurationDate
-
 		Securities[i].TotalAmount = 25000 * unitAmount
 		Securities[i].Balance = Securities[i].TotalAmount - owner.OwnedAmount
 		SecurityAsBytes, _ := json.Marshal(Securities[i])
@@ -601,6 +613,9 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 		return shim.Error("Incorrect number of arguments. Expecting 11")
 	}
 
+	TimeNow := time.Now().Format(timelayout)
+	Today := SubString(TimeNow, 0, 8)
+
 	var newRepayPeriod, newAvaliable int
 	var newRate float64
 	var newAmount, newOwnedAmount int64
@@ -639,27 +654,43 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 
 	var doflg bool
 	doflg = false
+	var PaidDurationInterest int64
+	PaidDurationInterest = 0
+
 	var OwnedDurationDate []string
 	var oldOwnedAmount int64
 	var newBalance int64
 	oldOwnedAmount = 0
 	newBalance = 0
+	var oldOwnedInterest int64
+	var newOwnedInterest int64
+	//var newInterest int64
+	oldOwnedInterest = 0
+	newOwnedInterest = 0
+	//newInterest = 0
+
 	for key, val := range Security.Owners {
 		if val.OwnedAccountID == args[7] {
 			oldOwnedAmount = Security.Owners[key].OwnedAmount
+			oldOwnedInterest = Security.Owners[key].OwnedInterest
 			Security.Balance += Security.Owners[key].OwnedAmount
 			Security.Owners[key].OwnedBankID = args[8]
 			Security.Owners[key].OwnedAmount = newOwnedAmount
 			myOwnedAmount := float64(Security.Owners[key].OwnedAmount)
 			OwnedInterest := perDayInterest * daySub(Security.IssueDate, Security.MaturityDate) * Security.InterestRate * myOwnedAmount
 			Security.Owners[key].OwnedInterest = int64(OwnedInterest)
+			newOwnedInterest = Security.Owners[key].OwnedInterest
 			Security.Owners[key].OwnedDurationInterest = Security.Owners[key].OwnedInterest / int64(Security.RepayPeriod)
 			j := 0
 			var SecurityDurationDate []string
+
 			for j < Security.RepayPeriod {
 				NextPayInterestDate, _ := generateMaturity(Security.IssueDate, j+1, 0, 0)
 				OwnedDurationDate = append(OwnedDurationDate, NextPayInterestDate)
 				SecurityDurationDate = append(SecurityDurationDate, NextPayInterestDate)
+				if Today >= NextPayInterestDate {
+					PaidDurationInterest = newOwnedInterest * int64(j+1)
+				}
 				j = j + 1
 			}
 			Security.Owners[key].OwnedDurationDate = OwnedDurationDate
@@ -674,9 +705,12 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 	fmt.Printf("oldOwnedAmount: %d\n", oldOwnedAmount)
 	if oldOwnedAmount > 0 {
 		newBalance = newOwnedAmount - oldOwnedAmount
+		//newInterest = newOwnedInterest - oldOwnedInterest
 		fmt.Printf("newBalance: %d\n", newBalance)
+		//err = updateBankTotals(APIstub, args[8], args[0], newBalance, newInterest, false)
 		err = updateBankTotals(APIstub, args[8], args[0], newBalance, false)
 	} else {
+		//err = updateBankTotals(APIstub, args[8], args[0], newOwnedAmount, newOwnedInterest, false)
 		err = updateBankTotals(APIstub, args[8], args[0], newOwnedAmount, false)
 	}
 
@@ -690,6 +724,7 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 		owner.OwnedBankID = args[8]
 		owner.OwnedAmount = newOwnedAmount
 		owner.OwnedInterest = int64(round(perDayMillionInterest*daySub(Security.IssueDate, Security.MaturityDate)*Security.InterestRate, 0)) * int64(newOwnedAmount/unitAmount)
+		newOwnedInterest = owner.OwnedInterest
 		owner.OwnedDurationInterest = owner.OwnedInterest / int64(Security.RepayPeriod)
 		j := 0
 		var SecurityDurationDate []string
@@ -697,6 +732,9 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 			NextPayInterestDate, _ := generateMaturity(Security.IssueDate, j+1, 0, 0)
 			owner.OwnedDurationDate = append(owner.OwnedDurationDate, NextPayInterestDate)
 			SecurityDurationDate = append(SecurityDurationDate, NextPayInterestDate)
+			if Today >= NextPayInterestDate {
+				PaidDurationInterest = newOwnedInterest * int64(j+1)
+			}
 			j = j + 1
 		}
 		owner.OwnedRepay = newOwnedAmount + owner.OwnedInterest
@@ -709,7 +747,6 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 	doflg = false
 	var securityTotal SecurityTotal
 	BankID := args[8]
-	TimeNow := time.Now().Format(timelayout)
 
 	fmt.Printf("BankID=%s\n", BankID)
 	for key, val := range Security.SecurityTotals {
@@ -719,8 +756,13 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 			fmt.Printf("3.Skey: %d\n", key)
 			fmt.Printf("4.Sval: %s\n", val)
 			fmt.Printf("oldOwnedAmount: %d\n", oldOwnedAmount)
+			fmt.Printf("oldOwnedInterest: %d\n", oldOwnedInterest)
 			Security.SecurityTotals[key].TotalBalance -= oldOwnedAmount
 			Security.SecurityTotals[key].TotalBalance += newOwnedAmount
+			Security.SecurityTotals[key].TotalInterest -= oldOwnedInterest
+			Security.SecurityTotals[key].TotalInterest += newOwnedInterest
+			Security.SecurityTotals[key].DurationInterest = Security.SecurityTotals[key].TotalInterest / int64(Security.RepayPeriod)
+			Security.SecurityTotals[key].PaidDurationInterest = PaidDurationInterest
 			Security.SecurityTotals[key].UpdateTime = TimeNow
 			doflg = true
 			break
@@ -730,6 +772,9 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 	if doflg != true {
 		securityTotal.BankID = BankID
 		securityTotal.TotalBalance = newOwnedAmount
+		securityTotal.TotalInterest = newOwnedInterest
+		securityTotal.DurationInterest = securityTotal.TotalInterest / int64(Security.RepayPeriod)
+		securityTotal.PaidDurationInterest = PaidDurationInterest
 		securityTotal.CreateTime = TimeNow
 		securityTotal.UpdateTime = TimeNow
 		Security.SecurityTotals = append(Security.SecurityTotals, securityTotal)
