@@ -191,6 +191,7 @@ func (s *SmartContract) submitApproveTransaction(
 			if (senderBalance < 0) || (receiverBalance < 0) {
 				return shim.Error("senderBalance,receiverBalance <0")
 			}
+
 		}
 		if TXType == "B" {
 			senderBalance, receiverBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
@@ -206,6 +207,7 @@ func (s *SmartContract) submitApproveTransaction(
 			if (senderBalance < 0) || (receiverBalance < 0) {
 				return shim.Error("senderBalance,receiverBalance <0")
 			}
+
 		}
 
 	} else if isApproved == true {
@@ -424,6 +426,7 @@ func (s *SmartContract) securityTransfer(
 								//return shim.Error("TxType=S - senderBalance or receiverBalance <0")
 								newTX.TXErrMsg = "TxType=S - senderBalance or receiverBalance <0"
 							}
+
 						}
 						if TXType == "B" {
 							//轉出          轉入
@@ -443,6 +446,7 @@ func (s *SmartContract) securityTransfer(
 								//return shim.Error("TxType=B - senderBalance or receiverBalance <0")
 								newTX.TXErrMsg = "TxType=B - senderBalance or receiverBalance <0"
 							}
+
 						}
 						newTX.IsFrozen = true
 						queuedTx.Transactions[key].IsFrozen = true
@@ -883,16 +887,17 @@ func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, S
 }
 
 func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Payment int64, sender string, receiver string) (int64, int64, error) {
-	Security, err := getSecurityStructFromID(stub, SecurityID)
 	fmt.Printf("updateSecurityAmount, SecurityID=%s,Payment=%d,sender=%s,receiver=%s\n", SecurityID, Payment, sender, receiver)
-
 	var senderBalance int64
 	var receiverBalance int64
+	senderBank := SubString(sender, 0, 3)
+	receiverBank := SubString(receiver, 0, 3)
+
+	//updateSecurityTotalAmount(stub,"A07106","002","004",1000,false)
+	Security, err := updateSecurityTotalAmount(stub, SecurityID, senderBank, receiverBank, Payment, false)
 	if err != nil {
 		return senderBalance, receiverBalance, err
 	}
-	senderBank := SubString(sender, 0, 3)
-	receiverBank := SubString(receiver, 0, 3)
 
 	var doflg bool
 	doflg = false
@@ -914,28 +919,29 @@ func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, P
 			sender)
 		return senderBalance, receiverBalance, errors.New(errMsg)
 	}
-	doflg = false
-	TimeNow := time.Now().Format(timelayout)
+	/*
+		doflg = false
+		TimeNow := time.Now().Format(timelayout)
 
-	for key, val := range Security.SecurityTotals {
-		fmt.Printf("1.Skey: %d\n", key)
-		fmt.Printf("2.Sval: %s\n", val)
-		if val.BankID == senderBank {
-			fmt.Printf("3.Skey: %d\n", key)
-			fmt.Printf("4.Sval: %s\n", val)
-			Security.SecurityTotals[key].TotalBalance -= Payment
-			Security.SecurityTotals[key].UpdateTime = TimeNow
-			doflg = true
+		for key, val := range Security.SecurityTotals {
+			fmt.Printf("1.Skey: %d\n", key)
+			fmt.Printf("2.Sval: %s\n", val)
+			if val.BankID == senderBank {
+				fmt.Printf("3.Skey: %d\n", key)
+				fmt.Printf("4.Sval: %s\n", val)
+				Security.SecurityTotals[key].TotalBalance -= Payment
+				Security.SecurityTotals[key].UpdateTime = TimeNow
+				doflg = true
+			}
+			if val.BankID == receiverBank {
+				fmt.Printf("5.Skey: %d\n", key)
+				fmt.Printf("6.Sval: %s\n", val)
+				Security.SecurityTotals[key].TotalBalance += Payment
+				Security.SecurityTotals[key].UpdateTime = TimeNow
+				doflg = true
+			}
 		}
-		if val.BankID == receiverBank {
-			fmt.Printf("5.Skey: %d\n", key)
-			fmt.Printf("6.Sval: %s\n", val)
-			Security.SecurityTotals[key].TotalBalance += Payment
-			Security.SecurityTotals[key].UpdateTime = TimeNow
-			doflg = true
-		}
-	}
-
+	*/
 	if senderBalance >= 0 || receiverBalance >= 0 {
 		SecurityAsBytes, err := json.Marshal(Security)
 		err = stub.PutState(SecurityID, SecurityAsBytes)
@@ -952,17 +958,18 @@ func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, P
 }
 
 func resetSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Payment int64, sender string, receiver string) (int64, int64, error) {
-
-	fmt.Printf("resetSecurityAmount, SecurityID=%s,Payment=%d,sender=%s,receiver=%s\n", SecurityID, Payment, sender, receiver)
-	Security, err := getSecurityStructFromID(stub, SecurityID)
-
 	var senderBalance int64
 	var receiverBalance int64
+	fmt.Printf("resetSecurityAmount, SecurityID=%s,Payment=%d,sender=%s,receiver=%s\n", SecurityID, Payment, sender, receiver)
+
+	senderBank := SubString(sender, 0, 3)
+	receiverBank := SubString(receiver, 0, 3)
+
+	//updateSecurityTotalAmount(stub,"A07106","002","004",1000,true)
+	Security, err := updateSecurityTotalAmount(stub, SecurityID, senderBank, receiverBank, Payment, true)
 	if err != nil {
 		return senderBalance, receiverBalance, err
 	}
-	senderBank := SubString(sender, 0, 3)
-	receiverBank := SubString(receiver, 0, 3)
 
 	var doflg bool
 	doflg = false
@@ -984,28 +991,29 @@ func resetSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 			sender)
 		return senderBalance, receiverBalance, errors.New(errMsg)
 	}
-	doflg = false
-	TimeNow := time.Now().Format(timelayout)
+	/*
+		doflg = false
+		TimeNow := time.Now().Format(timelayout)
 
-	for key, val := range Security.SecurityTotals {
-		fmt.Printf("1.Skey: %d\n", key)
-		fmt.Printf("2.Sval: %s\n", val)
-		if val.BankID == senderBank {
-			fmt.Printf("3.Skey: %d\n", key)
-			fmt.Printf("4.Sval: %s\n", val)
-			Security.SecurityTotals[key].TotalBalance += Payment
-			Security.SecurityTotals[key].UpdateTime = TimeNow
-			doflg = true
+		for key, val := range Security.SecurityTotals {
+			fmt.Printf("1.Skey: %d\n", key)
+			fmt.Printf("2.Sval: %s\n", val)
+			if val.BankID == senderBank {
+				fmt.Printf("3.Skey: %d\n", key)
+				fmt.Printf("4.Sval: %s\n", val)
+				Security.SecurityTotals[key].TotalBalance += Payment
+				Security.SecurityTotals[key].UpdateTime = TimeNow
+				doflg = true
+			}
+			if val.BankID == receiverBank {
+				fmt.Printf("5.Skey: %d\n", key)
+				fmt.Printf("6.Sval: %s\n", val)
+				Security.SecurityTotals[key].TotalBalance -= Payment
+				Security.SecurityTotals[key].UpdateTime = TimeNow
+				doflg = true
+			}
 		}
-		if val.BankID == receiverBank {
-			fmt.Printf("5.Skey: %d\n", key)
-			fmt.Printf("6.Sval: %s\n", val)
-			Security.SecurityTotals[key].TotalBalance -= Payment
-			Security.SecurityTotals[key].UpdateTime = TimeNow
-			doflg = true
-		}
-	}
-
+	*/
 	if senderBalance >= 0 || receiverBalance >= 0 {
 		SecurityAsBytes, err := json.Marshal(Security)
 		err = stub.PutState(SecurityID, SecurityAsBytes)
@@ -1847,6 +1855,8 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 		Payment := transaction.Payment
 		TXFrom := transaction.TXFrom
 		TXTo := transaction.TXTo
+		//BankFrom := SubString(transaction.TXFrom, 0, 3)
+		//BankTo := SubString(transaction.TXTo, 0, 3)
 
 		if TXType == "S" {
 			senderBalance, receiverBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
@@ -1862,6 +1872,7 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 			if (senderBalance < 0) || (receiverBalance < 0) {
 				return MatchedTXID, errors.New("senderBalance,receiverBalance <0")
 			}
+
 		}
 		if TXType == "B" {
 			senderBalance, receiverBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
@@ -1877,6 +1888,7 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 			if (senderBalance < 0) || (receiverBalance < 0) {
 				return MatchedTXID, errors.New("senderBalance,receiverBalance <0")
 			}
+
 		}
 	}
 

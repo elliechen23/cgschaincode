@@ -177,8 +177,8 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) peer.Respons
 		return s.getHistoryForSecurity(APIstub, args)
 	} else if function == "queryAllSecurityKeys" {
 		return s.queryAllSecurityKeys(APIstub, args)
-	} else if function == "updateSecurityTotals2" {
-		return s.updateSecurityTotals2(APIstub, args)
+	} else if function == "updateSecurityTotals" {
+		return s.updateSecurityTotals(APIstub, args)
 		// Account Functions
 	} else if function == "initAccount" {
 		return s.initAccount(APIstub, args)
@@ -1191,93 +1191,114 @@ func (s *SmartContract) queryAllSecurityKeys(APIstub shim.ChaincodeStubInterface
 
 }
 
-//updateSecurityTotals1(stub,"A07106","002",1000,false)
-func updateSecurityTotals1(stub shim.ChaincodeStubInterface, SecurityID string, BankID string, Amount int64, isNegative bool) error {
-	fmt.Printf("updateSecurityTotals: SecurityID=%s,BankID=%s,Amount=%d\n", SecurityID, BankID, Amount)
+//updateSecurityTotalAmount(stub,"A07106","002","004",1000)
+func updateSecurityTotalAmount(stub shim.ChaincodeStubInterface, SecurityID string, BankFrom string, BankTo string, Payment int64, isNegative bool) (*Security, error) {
+	fmt.Printf("updateSecurityTotals: SecurityID=%s,BankFrom=%s,BankTo=%s,Payment=%d\n", SecurityID, BankFrom, BankTo, Payment)
 	TimeNow := time.Now().Format(timelayout)
 	Today := SubString(TimeNow, 0, 8)
 	newSecurityID := SecurityID
-	security, err := getSecurityStructFromID(stub, newSecurityID)
-	fmt.Printf("new newSecurityID=%s\n", newSecurityID)
+	senderBank := BankFrom
+	receiverBank := BankTo
+	Security, err := getSecurityStructFromID(stub, newSecurityID)
 	if err != nil {
-		return err
+		return Security, err
 	}
 	var doflg bool
 	doflg = false
 	var securityTotal SecurityTotal
-	fmt.Printf("BankID=%s\n", BankID)
-
-	newOwnedAmount := float64(Amount)
-	OwnedInterest := perDayInterest * daySub(security.IssueDate, security.MaturityDate) * security.InterestRate * newOwnedAmount
+	newOwnedAmount := float64(Payment)
+	OwnedInterest := perDayInterest * daySub(Security.IssueDate, Security.MaturityDate) * Security.InterestRate * newOwnedAmount
 	Interest := int64(OwnedInterest)
-	DurationInterest := Interest / int64(security.RepayPeriod)
+	DurationInterest := Interest / int64(Security.RepayPeriod)
 	var PaidDurationPeriod int64
 	PaidDurationPeriod = 0
 	j := 0
-	for j < security.RepayPeriod {
-		NextPayInterestDate, _ := generateMaturity(security.IssueDate, j+1, 0, 0)
+	for j < Security.RepayPeriod {
+		NextPayInterestDate, _ := generateMaturity(Security.IssueDate, j+1, 0, 0)
 		if Today >= NextPayInterestDate {
 			PaidDurationPeriod = int64(j + 1)
 		}
 		j = j + 1
 	}
 
-	for key, val := range security.SecurityTotals {
+	for key, val := range Security.SecurityTotals {
 		fmt.Printf("1.Skey: %d\n", key)
 		fmt.Printf("2.Sval: %s\n", val)
-		if val.BankID == BankID {
+
+		if val.BankID == senderBank {
 			fmt.Printf("3.Skey: %d\n", key)
 			fmt.Printf("4.Sval: %s\n", val)
-
-			if isNegative != true {
-				security.SecurityTotals[key].TotalBalance += Amount
-				security.SecurityTotals[key].TotalInterest += Interest
-				security.SecurityTotals[key].DurationInterest += DurationInterest
-				security.SecurityTotals[key].PaidDurationInterest += DurationInterest * PaidDurationPeriod
-			} else if isNegative == true {
-				security.SecurityTotals[key].TotalBalance -= Amount
-				security.SecurityTotals[key].TotalInterest -= Interest
-				security.SecurityTotals[key].DurationInterest -= DurationInterest
-				security.SecurityTotals[key].PaidDurationInterest -= DurationInterest * PaidDurationPeriod
+			if isNegative == false {
+				Security.SecurityTotals[key].TotalBalance += Payment
+				Security.SecurityTotals[key].DurationInterest += DurationInterest
+				Security.SecurityTotals[key].PaidDurationInterest += DurationInterest * PaidDurationPeriod
+			} else {
+				Security.SecurityTotals[key].TotalBalance -= Payment
+				Security.SecurityTotals[key].DurationInterest -= DurationInterest
+				Security.SecurityTotals[key].PaidDurationInterest -= DurationInterest * PaidDurationPeriod
 			}
-
-			security.SecurityTotals[key].UpdateTime = TimeNow
+			Security.SecurityTotals[key].UpdateTime = TimeNow
 			doflg = true
-			break
 		}
+		if val.BankID == receiverBank {
+			fmt.Printf("5.Skey: %d\n", key)
+			fmt.Printf("6.Sval: %s\n", val)
+			if isNegative == false {
+				Security.SecurityTotals[key].TotalBalance -= Payment
+				Security.SecurityTotals[key].DurationInterest -= DurationInterest
+				Security.SecurityTotals[key].PaidDurationInterest -= DurationInterest * PaidDurationPeriod
+			} else {
+				Security.SecurityTotals[key].TotalBalance += Payment
+				Security.SecurityTotals[key].DurationInterest += DurationInterest
+				Security.SecurityTotals[key].PaidDurationInterest += DurationInterest * PaidDurationPeriod
+			}
+			Security.SecurityTotals[key].UpdateTime = TimeNow
+			doflg = true
+		}
+
 	}
 	if doflg != true {
-		securityTotal.BankID = BankID
-		securityTotal.TotalBalance = Amount
+		securityTotal.BankID = senderBank
+		securityTotal.TotalBalance = Payment
 		securityTotal.TotalInterest = Interest
 		securityTotal.DurationInterest = DurationInterest
 		securityTotal.PaidDurationInterest = DurationInterest * PaidDurationPeriod
 		securityTotal.CreateTime = TimeNow
 		securityTotal.UpdateTime = TimeNow
-		security.SecurityTotals = append(security.SecurityTotals, securityTotal)
+		Security.SecurityTotals = append(Security.SecurityTotals, securityTotal)
+
+		securityTotal.BankID = receiverBank
+		securityTotal.TotalBalance = Payment
+		securityTotal.TotalInterest = Interest
+		securityTotal.DurationInterest = DurationInterest
+		securityTotal.PaidDurationInterest = DurationInterest * PaidDurationPeriod
+		securityTotal.CreateTime = TimeNow
+		securityTotal.UpdateTime = TimeNow
+		Security.SecurityTotals = append(Security.SecurityTotals, securityTotal)
 	}
 
-	for key, _ := range security.Owners {
-		newOwnedAmount := float64(security.Owners[key].OwnedAmount)
-		OwnedInterest := perDayInterest * daySub(security.IssueDate, security.MaturityDate) * security.InterestRate * newOwnedAmount
-		security.Owners[key].OwnedInterest = int64(OwnedInterest)
-		security.Owners[key].OwnedDurationInterest = security.Owners[key].OwnedInterest / int64(security.RepayPeriod)
-		security.Owners[key].OwnedRepay = security.Owners[key].OwnedAmount + security.Owners[key].OwnedInterest
+	for key, _ := range Security.Owners {
+		newOwnedAmount := float64(Security.Owners[key].OwnedAmount)
+		OwnedInterest := perDayInterest * daySub(Security.IssueDate, Security.MaturityDate) * Security.InterestRate * newOwnedAmount
+		Security.Owners[key].OwnedInterest = int64(OwnedInterest)
+		Security.Owners[key].OwnedDurationInterest = Security.Owners[key].OwnedInterest / int64(Security.RepayPeriod)
+		Security.Owners[key].OwnedRepay = Security.Owners[key].OwnedAmount + Security.Owners[key].OwnedInterest
 	}
-
-	securityAsBytes, err := json.Marshal(security)
-	if err != nil {
-		return err
-	}
-	err = stub.PutState(newSecurityID, securityAsBytes)
-	if err != nil {
-		return err
-	}
-	return nil
+	/*
+		securityAsBytes, err := json.Marshal(security)
+		if err != nil {
+			return security,err
+		}
+		err = stub.PutState(newSecurityID, securityAsBytes)
+		if err != nil {
+			return security,err
+		}
+	*/
+	return Security, nil
 }
 
-//peer chaincode invoke -n mycc -c '{"Args":["updateSecurityTotals2", "A07103"]}' -C myc
-func (s *SmartContract) updateSecurityTotals2(stub shim.ChaincodeStubInterface, args []string) peer.Response {
+//peer chaincode invoke -n mycc -c '{"Args":["updateSecurityTotals", "A07106","002","",""]}' -C myc
+func (s *SmartContract) updateSecurityTotals(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	if len(args) < 4 {
 		return shim.Error("Keys operation must include 4 arguments")
 	}
@@ -1291,7 +1312,7 @@ func (s *SmartContract) updateSecurityTotals2(stub shim.ChaincodeStubInterface, 
 	if err2 != nil {
 		return shim.Error(err.Error())
 	}
-	fmt.Printf("updateSecurityTotals2: SecurityID=%s,BankID=%s,Amount=%d\n", SecurityID, BankID, Amount)
+	fmt.Printf("updateSecurityTotals: SecurityID=%s,BankID=%s,Amount=%d\n", SecurityID, BankID, Amount)
 	TimeNow := time.Now().Format(timelayout)
 	Today := SubString(TimeNow, 0, 8)
 	newSecurityID := SecurityID
