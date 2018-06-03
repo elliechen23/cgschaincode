@@ -21,8 +21,6 @@ const QueuedTXObjectType string = "QueuedTX"
 const HistoryTXObjectType string = "HistoryTX"
 const timelayout string = "20060102150405"
 
-//var TimeNow string = time.Now().Format(timelayout)
-
 type Transaction struct {
 	ObjectType     string `json:"docType"`        // default set to "Transaction"
 	TXID           string `json:"TXID"`           // Transaction ID
@@ -39,8 +37,9 @@ type Transaction struct {
 	IsFrozen       bool   `json:"isFrozen"`
 	CreateTime     string `json:"createTime"`
 	UpdateTime     string `json:"updateTime"`
-	TXIndex        string `json:"TXIndex"` // Transaction Index
-	TXHcode        string `json:"TXHcode"` // Transaction Hcode(更正交易序號)
+	TXIndex        string `json:"TXIndex"`  // Transaction Index(全部比對)
+	TXSIndex       string `json:"TXSIndex"` // Transaction Short Index(沒有比對SecurityAmount,Payment)
+	TXHcode        string `json:"TXHcode"`  // Transaction Hcode(更正交易序號)
 	TXFromBalance  int64  `json:"TXFromBalance"`
 	TXFromPosition int64  `json:"TXFromPosition"`
 	MatchedTXID    string `json:"MatchedTXID"`
@@ -48,11 +47,19 @@ type Transaction struct {
 	TXErrMsg       string `json:"TXErrMsg"` //交易錯誤說明
 }
 
+/*
+TXData1 = BankFrom + TXFrom + BankTo + TXTo + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
+TXIndex = getSHA256(TXData1)
+TXData2 = BankFrom + TXFrom + BankTo + TXTo + SecurityID
+TXSIndex = getSHA256(TXData2)
+*/
+
 type QueuedTransaction struct {
 	ObjectType   string        `json:"docType"` // default set to "QueuedTX"
 	TXKEY        string        `json:"TXKEY"`   //TXDATE(YYYYMMDD)
 	TXIDs        []string      `json:"TXIDs"`
 	TXIndexs     []string      `json:"TXIndexs"`
+	TXSIndexs    []string      `json:"TXSIndexs"`
 	Transactions []Transaction `json:"Transactions"`
 }
 
@@ -61,6 +68,7 @@ type TransactionHistory struct {
 	TXKEY        string        `json:"TXKEY"`   //TXDATE(HYYYYMMDD)
 	TXIDs        []string      `json:"TXIDs"`
 	TXIndexs     []string      `json:"TXIndexs"`
+	TXSIndexs    []string      `json:"TXSIndexs"`
 	TXStatus     []string      `json:"TXStatus"`
 	TXKinds      []string      `json:"TXKinds"`
 	Transactions []Transaction `json:"Transactions"`
@@ -298,6 +306,7 @@ func (s *SmartContract) securityTransfer(
 		newTX.TXErrMsg = errMsg
 	}
 	TXIndex := newTX.TXIndex
+	TXSIndex := newTX.TXSIndex
 	TXID := newTX.TXID
 	TXType := newTX.TXType
 	SecurityID := newTX.SecurityID
@@ -357,12 +366,14 @@ func (s *SmartContract) securityTransfer(
 			queuedTx.TXKEY = TXKEY
 			queuedTx.Transactions = append(queuedTx.Transactions, newTX)
 			queuedTx.TXIndexs = append(queuedTx.TXIndexs, TXIndex)
+			queuedTx.TXSIndexs = append(queuedTx.TXSIndexs, TXSIndex)
 			queuedTx.TXIDs = append(queuedTx.TXIDs, TXID)
 			if historyAsBytes == nil {
 				historyNewTX.ObjectType = HistoryTXObjectType
 				historyNewTX.TXKEY = HTXKEY
 				historyNewTX.Transactions = append(historyNewTX.Transactions, newTX)
 				historyNewTX.TXIndexs = append(historyNewTX.TXIndexs, TXIndex)
+				historyNewTX.TXSIndexs = append(historyNewTX.TXSIndexs, TXSIndex)
 				historyNewTX.TXIDs = append(historyNewTX.TXIDs, TXID)
 				historyNewTX.TXStatus = append(historyNewTX.TXStatus, newTX.TXStatus)
 				historyNewTX.TXKinds = append(historyNewTX.TXKinds, TXKinds)
@@ -473,6 +484,33 @@ func (s *SmartContract) securityTransfer(
 						doflg = true
 						break
 					}
+				} else {
+					fmt.Println("1.TXSIndex= " + TXSIndex + "\n")
+					if val.TXSIndex == TXSIndex && val.TXStatus == TXStatus && val.TXIndex != TXIndex && val.TXFrom != TXFrom && val.TXType != TXType && val.TXID != TXID {
+						if TXStatus == "Pending" && val.TXStatus == "Pending" {
+							if SecurityAmount != val.SecurityAmount {
+								newTX.MatchedTXID = val.TXID
+								queuedTx.Transactions[key].MatchedTXID = TXID
+								historyNewTX.Transactions[key].MatchedTXID = TXID
+								newTX.TXMemo = "交易金額疑似有誤"
+								queuedTx.Transactions[key].TXMemo = "交易金額疑似有誤"
+								historyNewTX.Transactions[key].TXMemo = "交易金額疑似有誤"
+								newTX.TXErrMsg = "交易金額疑似有誤"
+								queuedTx.Transactions[key].TXErrMsg = "交易金額疑似有誤"
+								historyNewTX.Transactions[key].TXErrMsg = "交易金額疑似有誤"
+							} else if Payment != val.Payment {
+								newTX.MatchedTXID = val.TXID
+								queuedTx.Transactions[key].MatchedTXID = TXID
+								historyNewTX.Transactions[key].MatchedTXID = TXID
+								newTX.TXMemo = "債券交易面額疑似有誤"
+								queuedTx.Transactions[key].TXMemo = "債券交易面額疑似有誤"
+								historyNewTX.Transactions[key].TXMemo = "債券交易面額疑似有誤"
+								newTX.TXErrMsg = "債券交易面額疑似有誤"
+								queuedTx.Transactions[key].TXErrMsg = "債券交易面額疑似有誤"
+								historyNewTX.Transactions[key].TXErrMsg = "債券交易面額疑似有誤"
+							}
+						}
+					}
 				}
 			}
 		}
@@ -521,7 +559,7 @@ func validateTransaction(
 	args []string) (Transaction, bool, string) {
 	TimeNow := time.Now().Format(timelayout)
 	var err error
-	var TXData, TXIndex, TXID string
+	var TXData1, TXData2, TXIndex, TXSIndex, TXID string
 
 	transaction := Transaction{}
 	transaction.ObjectType = TransactionObjectType
@@ -603,14 +641,19 @@ func validateTransaction(
 	}
 	transaction.Payment = Payment
 	if TXType == "S" {
-		TXData = BankFrom + TXFrom + BankTo + TXTo + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
-		TXIndex = getSHA256(TXData)
+		TXData1 = BankFrom + TXFrom + BankTo + TXTo + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
+		TXIndex = getSHA256(TXData1)
+		TXData2 = BankFrom + TXFrom + BankTo + TXTo + SecurityID
+		TXSIndex = getSHA256(TXData2)
 	}
 	if TXType == "B" {
-		TXData = BankTo + TXTo + BankFrom + TXFrom + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
-		TXIndex = getSHA256(TXData)
+		TXData1 = BankTo + TXTo + BankFrom + TXFrom + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
+		TXIndex = getSHA256(TXData1)
+		TXData2 = BankTo + TXTo + BankFrom + TXFrom + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
+		TXSIndex = getSHA256(TXData2)
 	}
 	transaction.TXIndex = TXIndex
+	transaction.TXSIndex = TXSIndex
 	balance, position, err := checkAccountBalance(stub, SecurityID, Payment, TXFrom, TXType)
 	if err != nil {
 		transaction.TXMemo = "券不足"
@@ -1622,7 +1665,7 @@ func validateCorrectTransaction(
 	args []string) (Transaction, bool, string) {
 	TimeNow := time.Now().Format(timelayout)
 	var err error
-	var TXData, TXIndex, TXID string
+	var TXData1, TXData2, TXIndex, TXSIndex, TXID string
 	//TimeNow := time.Now().Format(timelayout)
 	transaction := Transaction{}
 	transaction.ObjectType = TransactionObjectType
@@ -1717,15 +1760,20 @@ func validateCorrectTransaction(
 	transaction.isPutToQueue = isPutToQueue
 
 	if TXType == "S" {
-		TXData = BankFrom + TXFrom + BankTo + TXTo + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
-		TXIndex = getSHA256(TXData)
+		TXData1 = BankFrom + TXFrom + BankTo + TXTo + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
+		TXIndex = getSHA256(TXData1)
+		TXData2 = BankFrom + TXFrom + BankTo + TXTo + SecurityID
+		TXSIndex = getSHA256(TXData2)
 	}
 
 	if TXType == "B" {
-		TXData = BankTo + TXTo + BankFrom + TXFrom + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
-		TXIndex = getSHA256(TXData)
+		TXData1 = BankTo + TXTo + BankFrom + TXFrom + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
+		TXIndex = getSHA256(TXData1)
+		TXData2 = BankTo + TXTo + BankFrom + TXFrom + SecurityID
+		TXSIndex = getSHA256(TXData2)
 	}
 	transaction.TXIndex = TXIndex
+	transaction.TXSIndex = TXSIndex
 	balance, position, err := checkAccountBalance(stub, SecurityID, Payment, TXFrom, TXType)
 	if err != nil {
 		//return transaction, false, err
