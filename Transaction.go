@@ -653,7 +653,7 @@ func validateTransaction(
 	if TXType == "B" {
 		TXData1 = BankTo + TXTo + BankFrom + TXFrom + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
 		TXIndex = getSHA256(TXData1)
-		TXData2 = BankTo + TXTo + BankFrom + TXFrom + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
+		TXData2 = BankTo + TXTo + BankFrom + TXFrom + SecurityID
 		TXSIndex = getSHA256(TXData2)
 	}
 	transaction.TXIndex = TXIndex
@@ -1397,6 +1397,7 @@ func updateHistoryTransactionTXHcode(stub shim.ChaincodeStubInterface, HTXKEY st
 	return nil
 }
 
+//peer chaincode invoke -n mycc1 -c '{"Args":["securityCorrectTransfer", "S","004000000001" , "002000000001" , "A07106" , "102000","100000","true","BANK002B00200000000120180606155851"]}' -C myc
 func (s *SmartContract) securityCorrectTransfer(
 	stub shim.ChaincodeStubInterface,
 	args []string) peer.Response {
