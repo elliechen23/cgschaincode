@@ -1204,9 +1204,7 @@ func updateSecurityTotalAmount(stub shim.ChaincodeStubInterface, SecurityID stri
 	if err != nil {
 		return Security, err
 	}
-	var doflg bool
-	doflg = false
-	var securityTotal SecurityTotal
+
 	newOwnedAmount := float64(Payment)
 	OwnedInterest := perDayInterest * daySub(Security.IssueDate, Security.MaturityDate) * Security.InterestRate * newOwnedAmount
 	Interest := int64(OwnedInterest)
@@ -1244,7 +1242,7 @@ func updateSecurityTotalAmount(stub shim.ChaincodeStubInterface, SecurityID stri
 				Security.SecurityTotals[key].PaidDurationInterest -= PaidDurationInterest
 			}
 			Security.SecurityTotals[key].UpdateTime = TimeNow
-			doflg = true
+
 		}
 		if val.BankID == receiverBank {
 			fmt.Printf("5.Skey: %d\n", key)
@@ -1259,28 +1257,9 @@ func updateSecurityTotalAmount(stub shim.ChaincodeStubInterface, SecurityID stri
 				Security.SecurityTotals[key].PaidDurationInterest += PaidDurationInterest
 			}
 			Security.SecurityTotals[key].UpdateTime = TimeNow
-			doflg = true
+
 		}
 
-	}
-	if doflg != true {
-		securityTotal.BankID = senderBank
-		securityTotal.TotalBalance = Payment
-		securityTotal.TotalInterest = Interest
-		securityTotal.DurationInterest = DurationInterest
-		securityTotal.PaidDurationInterest = PaidDurationInterest
-		securityTotal.CreateTime = TimeNow
-		securityTotal.UpdateTime = TimeNow
-		Security.SecurityTotals = append(Security.SecurityTotals, securityTotal)
-
-		securityTotal.BankID = receiverBank
-		securityTotal.TotalBalance = Payment
-		securityTotal.TotalInterest = Interest
-		securityTotal.DurationInterest = DurationInterest
-		securityTotal.PaidDurationInterest = PaidDurationInterest
-		securityTotal.CreateTime = TimeNow
-		securityTotal.UpdateTime = TimeNow
-		Security.SecurityTotals = append(Security.SecurityTotals, securityTotal)
 	}
 
 	for key, _ := range Security.Owners {
@@ -1303,13 +1282,14 @@ func updateSecurityTotalAmount(stub shim.ChaincodeStubInterface, SecurityID stri
 	return Security, nil
 }
 
-//peer chaincode invoke -n mycc -c '{"Args":["updateSecurityTotals", "A07106","20190701"]}' -C myc
+//peer chaincode invoke -n mycc -c '{"Args":["updateSecurityTotals", "A07106","002","20190701"]}' -C myc
 func (s *SmartContract) updateSecurityTotals(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	if len(args) < 2 {
 		return shim.Error("Keys operation must include 2 arguments")
 	}
 	SecurityID := args[0]
 	BaselineDay := args[1]
+
 	fmt.Printf("updateSecurityTotals: SecurityID=%s,BaselineDay=%s\n", SecurityID, BaselineDay)
 	TimeNow := time.Now().Format(timelayout)
 	Today := SubString(TimeNow, 0, 8)
@@ -1337,15 +1317,25 @@ func (s *SmartContract) updateSecurityTotals(stub shim.ChaincodeStubInterface, a
 		}
 		j = j + 1
 	}
-
+	var BankID string
+	BankID = ""
 	for key, _ := range security.Owners {
 		newOwnedAmount := float64(security.Owners[key].OwnedAmount)
-		TotalBalance += int64(newOwnedAmount)
-		OwnedInterest := perDayInterest * daySub(security.IssueDate, security.MaturityDate) * security.InterestRate * newOwnedAmount
-		TotalInterest += int64(OwnedInterest)
-		security.Owners[key].OwnedInterest = int64(OwnedInterest)
-		security.Owners[key].OwnedDurationInterest = security.Owners[key].OwnedInterest / int64(security.RepayPeriod)
-		security.Owners[key].OwnedRepay = security.Owners[key].OwnedAmount + security.Owners[key].OwnedInterest
+		if (BankID != security.Owners[key].OwnedBankID) || (key == 0) {
+			TotalBalance = 0
+			TotalInterest = 0
+			BankID = security.Owners[key].OwnedBankID
+		} else {
+			TotalBalance += int64(newOwnedAmount)
+			OwnedInterest := perDayInterest * daySub(security.IssueDate, security.MaturityDate) * security.InterestRate * newOwnedAmount
+			TotalInterest += int64(OwnedInterest)
+			security.Owners[key].OwnedInterest = int64(OwnedInterest)
+			security.Owners[key].OwnedDurationInterest = security.Owners[key].OwnedInterest / int64(security.RepayPeriod)
+			security.Owners[key].OwnedRepay = security.Owners[key].OwnedAmount + security.Owners[key].OwnedInterest
+		}
+		fmt.Printf("BankID: %s\n", BankID)
+		fmt.Printf("TotalBalance: %d\n", TotalBalance)
+		fmt.Printf("TotalInterest\n", TotalInterest)
 	}
 
 	for key, val := range security.SecurityTotals {

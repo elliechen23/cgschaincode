@@ -346,6 +346,15 @@ func (s *SmartContract) securityTransfer(
 			TXKinds = "自行FOP轉入"
 		}
 	}
+	var approve_flag string
+	_, err := stub.GetState("cbc_approve")
+	if err != nil {
+		//return shim.Error(fmt.Sprintf("get operation failed. Error accessing state: %s", err))
+		approve_flag = ""
+	} else {
+		approve_flag = "yes"
+	}
+	approve_flag = "yes"
 	if isPutInQueue == true {
 
 		queueAsBytes, err := stub.GetState(TXKEY)
@@ -408,6 +417,9 @@ func (s *SmartContract) securityTransfer(
 						historyNewTX.Transactions[key].TXStatus = "Matched"
 						historyNewTX.TXStatus[key] = "Matched"
 						newTX.TXStatus = "Matched"
+						queuedTx.Transactions[key].TXMemo = ""
+						historyNewTX.Transactions[key].TXMemo = ""
+						newTX.TXMemo = ""
 						if TXType == "S" {
 							//轉出          轉入
 							senderBalance, receiverBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
@@ -453,14 +465,26 @@ func (s *SmartContract) securityTransfer(
 						historyNewTX.Transactions[key].IsFrozen = true
 						if BankFrom != BankTo {
 							if SecurityAmount != 0 {
-								queuedTx.Transactions[key].TXStatus = "Waiting4Payment"
-								historyNewTX.Transactions[key].TXStatus = "Waiting4Payment"
-								historyNewTX.TXStatus[key] = "Waiting4Payment"
-								newTX.TXStatus = "Waiting4Payment"
-								err := updateTransactionStatus(stub, val.TXID, "Waiting4Payment", TXID)
-								if err != nil {
-									//return shim.Error(err.Error())
-									newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Waiting4Payment."
+								if approve_flag == "yes" {
+									queuedTx.Transactions[key].TXStatus = "Finished"
+									historyNewTX.Transactions[key].TXStatus = "Finished"
+									historyNewTX.TXStatus[key] = "Finished"
+									newTX.TXStatus = "Finished"
+									err := updateTransactionStatus(stub, val.TXID, "Finished", TXID)
+									if err != nil {
+										//return shim.Error(err.Error())
+										newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Finished."
+									}
+								} else {
+									queuedTx.Transactions[key].TXStatus = "Waiting4Payment"
+									historyNewTX.Transactions[key].TXStatus = "Waiting4Payment"
+									historyNewTX.TXStatus[key] = "Waiting4Payment"
+									newTX.TXStatus = "Waiting4Payment"
+									err := updateTransactionStatus(stub, val.TXID, "Waiting4Payment", TXID)
+									if err != nil {
+										//return shim.Error(err.Error())
+										newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Waiting4Payment."
+									}
 								}
 							} else {
 								queuedTx.Transactions[key].TXStatus = "Finished"
@@ -499,9 +523,9 @@ func (s *SmartContract) securityTransfer(
 								newTX.TXMemo = "交易金額疑似有誤"
 								queuedTx.Transactions[key].TXMemo = "交易金額疑似有誤"
 								historyNewTX.Transactions[key].TXMemo = "交易金額疑似有誤"
-								newTX.TXErrMsg = "交易金額疑似有誤"
-								queuedTx.Transactions[key].TXErrMsg = "交易金額疑似有誤"
-								historyNewTX.Transactions[key].TXErrMsg = "交易金額疑似有誤"
+								newTX.TXErrMsg = "SecurityAmount != val.SecurityAmount"
+								queuedTx.Transactions[key].TXErrMsg = "SecurityAmount != val.SecurityAmount"
+								historyNewTX.Transactions[key].TXErrMsg = "SecurityAmount != val.SecurityAmount"
 							} else if Payment != val.Payment {
 								newTX.MatchedTXID = val.TXID
 								queuedTx.Transactions[key].MatchedTXID = TXID
@@ -509,9 +533,9 @@ func (s *SmartContract) securityTransfer(
 								newTX.TXMemo = "債券交易面額疑似有誤"
 								queuedTx.Transactions[key].TXMemo = "債券交易面額疑似有誤"
 								historyNewTX.Transactions[key].TXMemo = "債券交易面額疑似有誤"
-								newTX.TXErrMsg = "債券交易面額疑似有誤"
-								queuedTx.Transactions[key].TXErrMsg = "債券交易面額疑似有誤"
-								historyNewTX.Transactions[key].TXErrMsg = "債券交易面額疑似有誤"
+								newTX.TXErrMsg = "Payment != val.Payment"
+								queuedTx.Transactions[key].TXErrMsg = "Payment != val.Payment"
+								historyNewTX.Transactions[key].TXErrMsg = "Payment != val.Payment"
 							}
 						}
 					}
@@ -661,6 +685,7 @@ func validateTransaction(
 	balance, position, err := checkAccountBalance(stub, SecurityID, Payment, TXFrom, TXType)
 	if err != nil {
 		transaction.TXMemo = "券不足"
+		transaction.TXErrMsg = TXFrom + ":Payment > Balance"
 		return transaction, false, TXFrom + ":Payment > Balance"
 	}
 	transaction.TXFromBalance = balance
@@ -1041,6 +1066,10 @@ func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXSt
 		TXMemo = "同資款不足"
 		transaction.TXMemo = TXMemo
 	}
+	if TXStatus == "Matched" {
+		TXMemo = ""
+		transaction.TXMemo = TXMemo
+	}
 
 	if TXStatus != "Cancelled" && TXStatus != "PaymentError" {
 		fmt.Printf("2 updateTransactionStatus TXStatus = %s\n", TXStatus)
@@ -1144,6 +1173,9 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 	if TXStatus == "PaymentError" {
 		TXMemo = "同資款不足"
 	}
+	if TXStatus == "Matched" {
+		TXMemo = ""
+	}
 
 	for key, val := range queuedTX.TXIDs {
 		fmt.Printf("1.ATXIDs: %s\n", TXID)
@@ -1198,6 +1230,9 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 	TXMemo = ""
 	if TXStatus == "PaymentError" {
 		TXMemo = "同資款不足"
+	}
+	if TXStatus == "Matched" {
+		TXMemo = ""
 	}
 
 	for key, val := range historyTX.TXIDs {
@@ -1305,6 +1340,7 @@ func updateTransactionTXHcode(stub shim.ChaincodeStubInterface, TXID string, TXH
 	transaction, err := getTransactionStructFromID(stub, TXID)
 	transaction.TXHcode = TXHcode
 	transaction.TXStatus = "Cancelled"
+	transaction.TXMemo = "更正交易"
 	transaction.UpdateTime = TimeNow
 
 	transactionAsBytes, err := json.Marshal(transaction)
@@ -1336,6 +1372,7 @@ func updateQueuedTransactionTXHcode(stub shim.ChaincodeStubInterface, TXKEY stri
 			fmt.Printf("4.Qval: %s\n", val)
 			queuedTX.Transactions[key].TXHcode = TXHcode
 			queuedTX.Transactions[key].TXStatus = "Cancelled"
+			queuedTX.Transactions[key].TXMemo = "更正交易"
 			queuedTX.Transactions[key].UpdateTime = TimeNow
 			doflg = true
 			break
@@ -1376,6 +1413,7 @@ func updateHistoryTransactionTXHcode(stub shim.ChaincodeStubInterface, HTXKEY st
 			fmt.Printf("4.Hval: %s\n", val)
 			historyTX.Transactions[key].TXHcode = TXHcode
 			historyTX.Transactions[key].TXStatus = "Cancelled"
+			historyTX.Transactions[key].TXMemo = "更正交易"
 			historyTX.TXStatus[key] = "Cancelled"
 			historyTX.Transactions[key].UpdateTime = TimeNow
 			doflg = true
@@ -1447,6 +1485,16 @@ func (s *SmartContract) securityCorrectTransfer(
 			TXKinds = "自行FOP轉入"
 		}
 	}
+	var approve_flag string
+	approve_flag = ""
+	_, err := stub.GetState("cbc_approve")
+	if err != nil {
+		//return shim.Error(fmt.Sprintf("get operation failed. Error accessing state: %s", err))
+		approve_flag = ""
+	} else {
+		approve_flag = "yes"
+	}
+	approve_flag = "yes"
 	if isPutInQueue == true {
 
 		queueAsBytes, err := stub.GetState(TXKEY)
@@ -1547,6 +1595,9 @@ func (s *SmartContract) securityCorrectTransfer(
 						historyNewTX.Transactions[key].TXStatus = "Matched"
 						historyNewTX.TXStatus[key] = "Matched"
 						newTX.TXStatus = "Matched"
+						queuedTx.Transactions[key].TXMemo = ""
+						historyNewTX.Transactions[key].TXMemo = ""
+						newTX.TXMemo = ""
 						if TXType == "S" {
 							//轉出          轉入
 							senderBalance, receiverBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
@@ -1590,14 +1641,26 @@ func (s *SmartContract) securityCorrectTransfer(
 						historyNewTX.Transactions[key].IsFrozen = true
 						if BankFrom != BankTo {
 							if SecurityAmount != 0 {
-								queuedTx.Transactions[key].TXStatus = "Waiting4Payment"
-								historyNewTX.Transactions[key].TXStatus = "Waiting4Payment"
-								historyNewTX.TXStatus[key] = "Waiting4Payment"
-								newTX.TXStatus = "Waiting4Payment"
-								err := updateTransactionStatus(stub, val.TXID, "Waiting4Payment", TXID)
-								if err != nil {
-									//return shim.Error(err.Error())
-									newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Waiting4Payment."
+								if approve_flag == "yes" {
+									queuedTx.Transactions[key].TXStatus = "Finished"
+									historyNewTX.Transactions[key].TXStatus = "Finished"
+									historyNewTX.TXStatus[key] = "Finished"
+									newTX.TXStatus = "Finished"
+									err := updateTransactionStatus(stub, val.TXID, "Finished", TXID)
+									if err != nil {
+										//return shim.Error(err.Error())
+										newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Finished."
+									}
+								} else {
+									queuedTx.Transactions[key].TXStatus = "Waiting4Payment"
+									historyNewTX.Transactions[key].TXStatus = "Waiting4Payment"
+									historyNewTX.TXStatus[key] = "Waiting4Payment"
+									newTX.TXStatus = "Waiting4Payment"
+									err := updateTransactionStatus(stub, val.TXID, "Waiting4Payment", TXID)
+									if err != nil {
+										//return shim.Error(err.Error())
+										newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Waiting4Payment."
+									}
 								}
 							} else {
 								queuedTx.Transactions[key].TXStatus = "Finished"
@@ -1787,6 +1850,7 @@ func validateCorrectTransaction(
 	if err != nil {
 		//return transaction, false, err
 		transaction.TXMemo = "券不足"
+		transaction.TXErrMsg = TXFrom + ":Payment > Balance"
 		return transaction, false, TXFrom + ":Payment > Balance"
 	}
 	transaction.TXFromBalance = balance
@@ -1798,6 +1862,7 @@ func validateCorrectTransaction(
 	if err2 != nil {
 		//return transaction, false, err2
 		transaction.TXMemo = "更正失敗"
+		transaction.TXErrMsg = TXID + ":updateTransactionTXHcode execution failed."
 		return transaction, false, TXID + ":updateTransactionTXHcode execution failed."
 	}
 
@@ -1815,12 +1880,13 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 	}
 	TXStatus := transaction.TXStatus
 	TXMemo := ""
-	if TXStatus == "Pending" {
-		TXMemo = "尚未比對"
-	}
 	if TXStatus == "Waiting4Payment" {
 		TXMemo = "同資回報系統錯誤"
 	}
+	if TXStatus == "Pending" {
+		TXMemo = "日終尚未比對取消"
+	}
+
 	transaction.TXStatus = "Cancelled"
 	transaction.TXMemo = TXMemo
 	transaction.UpdateTime = TimeNow
@@ -1913,11 +1979,11 @@ func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY
 
 		TXStatus := queuedTX.Transactions[key].TXStatus
 		TXMemo := ""
-		if TXStatus == "Pending" {
-			TXMemo = "尚未比對"
-		}
 		if TXStatus == "Waiting4Payment" {
 			TXMemo = "同資回報系統錯誤"
+		}
+		if TXStatus == "Pending" {
+			TXMemo = "日終尚未比對取消"
 		}
 
 		if val == TXID {
@@ -1975,11 +2041,11 @@ func updateEndDayHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXK
 
 		TXStatus := historyTX.Transactions[key].TXStatus
 		TXMemo := ""
-		if TXStatus == "Pending" {
-			TXMemo = "尚未比對"
-		}
 		if TXStatus == "Waiting4Payment" {
 			TXMemo = "同資回報系統錯誤"
+		}
+		if TXStatus == "Pending" {
+			TXMemo = "日終尚未比對取消"
 		}
 
 		if val == TXID {
