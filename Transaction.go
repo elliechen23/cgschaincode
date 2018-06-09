@@ -2482,3 +2482,80 @@ func (s *SmartContract) queryAllTransactionKeys(APIstub shim.ChaincodeStubInterf
 	return shim.Success(jsonKeys)
 
 }
+
+//peer chaincode query -n mycc -c '{"Args":["queryHistoryTransactionStatus","H1070609","Finished"]}' -C myc
+func (s *SmartContract) queryHistoryTransactionStatus(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
+
+	if len(args) != 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 2")
+	}
+	HTXKEY := args[0]
+	TXStatus := args[1]
+
+	HistoryAsBytes, _ := APIstub.GetState(HTXKEY)
+	HistoryTX := TransactionHistory{}
+	json.Unmarshal(HistoryAsBytes, &HistoryTX)
+
+	var doflg bool
+	doflg = false
+	var buffer bytes.Buffer
+	buffer.WriteString("[")
+	buffer.WriteString("{\"HTXKEY\":")
+	buffer.WriteString("\"")
+	buffer.WriteString(HistoryTX.TXKEY)
+	buffer.WriteString("\"")
+
+	for key, val := range HistoryTX.TXStatus {
+		if val == TXStatus {
+			buffer.WriteString(", \"HistoryKey\":")
+			buffer.WriteString(strconv.Itoa(key))
+			buffer.WriteString(", \"TXID\":")
+			buffer.WriteString(HistoryTX.Transactions[key].TXID)
+			buffer.WriteString(", \"TXType\":")
+			buffer.WriteString(HistoryTX.Transactions[key].TXType)
+			buffer.WriteString(", \"TXKinds\":")
+			buffer.WriteString(HistoryTX.TXKinds[key])
+			buffer.WriteString(", \"TXFrom\":")
+			buffer.WriteString(HistoryTX.Transactions[key].TXFrom)
+			buffer.WriteString(", \"TXTo\":")
+			buffer.WriteString(HistoryTX.Transactions[key].TXTo)
+			buffer.WriteString(", \"BankFrom\":")
+			buffer.WriteString(HistoryTX.Transactions[key].BankFrom)
+			buffer.WriteString(", \"BankTo\":")
+			buffer.WriteString(HistoryTX.Transactions[key].BankTo)
+			buffer.WriteString(", \"SecurityID\":")
+			buffer.WriteString(HistoryTX.Transactions[key].SecurityID)
+			buffer.WriteString(", \"SecurityAmount\":")
+			buffer.WriteString(strconv.FormatInt(HistoryTX.Transactions[key].SecurityAmount, 10))
+			buffer.WriteString(", \"Payment\":")
+			buffer.WriteString(strconv.FormatInt(HistoryTX.Transactions[key].Payment, 10))
+			buffer.WriteString(", \"TXStatus\":")
+			buffer.WriteString(HistoryTX.Transactions[key].TXStatus)
+			buffer.WriteString(", \"TXMemo\":")
+			buffer.WriteString(HistoryTX.Transactions[key].TXMemo)
+			buffer.WriteString(", \"TXErrMsg\":")
+			buffer.WriteString(HistoryTX.Transactions[key].TXErrMsg)
+			buffer.WriteString(", \"TXHcode\":")
+			buffer.WriteString(HistoryTX.Transactions[key].TXHcode)
+			buffer.WriteString(", \"MatchedTXID\":")
+			buffer.WriteString(HistoryTX.Transactions[key].MatchedTXID)
+			buffer.WriteString(", \"CreateTime\":")
+			buffer.WriteString(HistoryTX.Transactions[key].CreateTime)
+			buffer.WriteString(", \"UpdateTime\":")
+			buffer.WriteString(HistoryTX.Transactions[key].UpdateTime)
+			buffer.WriteString(", \"TXIndex\":")
+			buffer.WriteString(HistoryTX.Transactions[key].TXIndex)
+			buffer.WriteString(", \"TXSIndex\":")
+			buffer.WriteString(HistoryTX.Transactions[key].TXSIndex)
+			doflg = true
+		}
+	}
+	if doflg != true {
+		return shim.Error("Failed to find TransactionHistory ")
+	}
+	buffer.WriteString("}")
+	buffer.WriteString("]")
+	fmt.Printf("%s", buffer.String())
+
+	return shim.Success(buffer.Bytes())
+}

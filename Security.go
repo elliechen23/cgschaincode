@@ -165,6 +165,8 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) peer.Respons
 		return s.changeSecurity(APIstub, args)
 	} else if function == "changeSecurityStatus" {
 		return s.changeSecurityStatus(APIstub, args)
+	} else if function == "changeSecurityTotals" {
+		return s.changeSecurityTotals(APIstub, args)
 	} else if function == "changeOwnerAvaliable" {
 		return s.changeOwnerAvaliable(APIstub, args)
 	} else if function == "deleteSecurity" {
@@ -177,8 +179,6 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) peer.Respons
 		return s.getHistoryForSecurity(APIstub, args)
 	} else if function == "queryAllSecurityKeys" {
 		return s.queryAllSecurityKeys(APIstub, args)
-	} else if function == "updateSecurityTotals" {
-		return s.updateSecurityTotals(APIstub, args)
 		// Account Functions
 	} else if function == "initAccount" {
 		return s.initAccount(APIstub, args)
@@ -254,6 +254,8 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) peer.Respons
 		return s.queryAllHistoryTransactions(APIstub, args)
 	} else if function == "queryAllTransactionKeys" {
 		return s.queryAllTransactionKeys(APIstub, args)
+	} else if function == "queryHistoryTransactionStatus" {
+		return s.queryHistoryTransactionStatus(APIstub, args)
 	} else {
 		//map functions
 		return s.mapFunction(APIstub, function, args)
@@ -497,7 +499,7 @@ func (s *SmartContract) initLedger(APIstub shim.ChaincodeStubInterface, args []s
 		}
 		securityTotal.BankID = args[0]
 		securityTotal.TotalBalance = Securities[i].Balance
-		securityTotal.TotalInterest += owner.OwnedInterest
+		securityTotal.TotalInterest = owner.OwnedInterest
 		securityTotal.DurationInterest = securityTotal.TotalInterest / int64(Securities[i].RepayPeriod)
 		securityTotal.PaidDurationInterest = PaidDurationInterest
 		securityTotal.CreateTime = TimeNow
@@ -1192,180 +1194,105 @@ func (s *SmartContract) queryAllSecurityKeys(APIstub shim.ChaincodeStubInterface
 
 }
 
-//updateSecurityTotalAmount(stub,"A07106","002","004",1000)
-func updateSecurityTotalAmount(stub shim.ChaincodeStubInterface, SecurityID string, BankFrom string, BankTo string, Payment int64, isNegative bool) (*Security, error) {
-	fmt.Printf("updateSecurityTotalAmount: SecurityID=%s,BankFrom=%s,BankTo=%s,Payment=%d\n", SecurityID, BankFrom, BankTo, Payment)
+//peer chaincode invoke -n mycc -c '{"Args":["changeSecurityTotals", "A07103","002"]}' -C myc
+func (s *SmartContract) changeSecurityTotals(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
+
+	if len(args) != 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 2")
+	}
+
 	TimeNow := time.Now().Format(timelayout)
 	Today := SubString(TimeNow, 0, 8)
-	newSecurityID := SecurityID
-	senderBank := BankFrom
-	receiverBank := BankTo
-	Security, err := getSecurityStructFromID(stub, newSecurityID)
-	if err != nil {
-		return Security, err
-	}
-
-	newOwnedAmount := float64(Payment)
-	OwnedInterest := perDayInterest * daySub(Security.IssueDate, Security.MaturityDate) * Security.InterestRate * newOwnedAmount
-	Interest := int64(OwnedInterest)
-	DurationInterest := Interest / int64(Security.RepayPeriod)
-	var PaidDurationPeriod int64
-	PaidDurationPeriod = 0
-	j := 0
-	for j < Security.RepayPeriod {
-		NextPayInterestDate, _ := generateMaturity(Security.IssueDate, j+1, 0, 0)
-		if Today >= NextPayInterestDate {
-			PaidDurationPeriod = int64(j + 1)
-		}
-		j = j + 1
-	}
-
-	PaidDurationInterest := DurationInterest * PaidDurationPeriod
-	fmt.Printf("DurationInterest: %d\n", DurationInterest)
-	fmt.Printf("PaidDurationPeriod: %d\n", PaidDurationPeriod)
-	fmt.Printf("PaidDurationInterest: %d\n", PaidDurationInterest)
-
-	for key, val := range Security.SecurityTotals {
-		fmt.Printf("1.Skey: %d\n", key)
-		fmt.Printf("2.Sval: %s\n", val)
-
-		if val.BankID == senderBank {
-			fmt.Printf("3.Skey: %d\n", key)
-			fmt.Printf("4.Sval: %s\n", val)
-			if isNegative == false {
-				Security.SecurityTotals[key].TotalBalance += Payment
-				Security.SecurityTotals[key].DurationInterest += DurationInterest
-				Security.SecurityTotals[key].PaidDurationInterest += PaidDurationInterest
-			} else {
-				Security.SecurityTotals[key].TotalBalance -= Payment
-				Security.SecurityTotals[key].DurationInterest -= DurationInterest
-				Security.SecurityTotals[key].PaidDurationInterest -= PaidDurationInterest
-			}
-			Security.SecurityTotals[key].UpdateTime = TimeNow
-
-		}
-		if val.BankID == receiverBank {
-			fmt.Printf("5.Skey: %d\n", key)
-			fmt.Printf("6.Sval: %s\n", val)
-			if isNegative == false {
-				Security.SecurityTotals[key].TotalBalance -= Payment
-				Security.SecurityTotals[key].DurationInterest -= DurationInterest
-				Security.SecurityTotals[key].PaidDurationInterest -= PaidDurationInterest
-			} else {
-				Security.SecurityTotals[key].TotalBalance += Payment
-				Security.SecurityTotals[key].DurationInterest += DurationInterest
-				Security.SecurityTotals[key].PaidDurationInterest += PaidDurationInterest
-			}
-			Security.SecurityTotals[key].UpdateTime = TimeNow
-
-		}
-
-	}
-
-	for key, _ := range Security.Owners {
-		newOwnedAmount := float64(Security.Owners[key].OwnedAmount)
-		OwnedInterest := perDayInterest * daySub(Security.IssueDate, Security.MaturityDate) * Security.InterestRate * newOwnedAmount
-		Security.Owners[key].OwnedInterest = int64(OwnedInterest)
-		Security.Owners[key].OwnedDurationInterest = Security.Owners[key].OwnedInterest / int64(Security.RepayPeriod)
-		Security.Owners[key].OwnedRepay = Security.Owners[key].OwnedAmount + Security.Owners[key].OwnedInterest
-	}
-	/*
-		securityAsBytes, err := json.Marshal(security)
-		if err != nil {
-			return security,err
-		}
-		err = stub.PutState(newSecurityID, securityAsBytes)
-		if err != nil {
-			return security,err
-		}
-	*/
-	return Security, nil
-}
-
-//peer chaincode invoke -n mycc -c '{"Args":["updateSecurityTotals", "A07106","002","20190701"]}' -C myc
-func (s *SmartContract) updateSecurityTotals(stub shim.ChaincodeStubInterface, args []string) peer.Response {
-	if len(args) < 2 {
-		return shim.Error("Keys operation must include 2 arguments")
-	}
 	SecurityID := args[0]
-	BaselineDay := args[1]
+	BankID := args[1]
+	fmt.Printf("BankID=%s\n", SecurityID)
+	fmt.Printf("BankID=%s\n", BankID)
 
-	fmt.Printf("updateSecurityTotals: SecurityID=%s,BaselineDay=%s\n", SecurityID, BaselineDay)
-	TimeNow := time.Now().Format(timelayout)
-	Today := SubString(TimeNow, 0, 8)
-	if BaselineDay != "" {
-		Today = BaselineDay
-	}
-	fmt.Printf("Today=%s\n", Today)
-	newSecurityID := SecurityID
-	security, err := getSecurityStructFromID(stub, newSecurityID)
-	fmt.Printf("new newSecurityID=%s\n", newSecurityID)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
+	SecurityAsBytes, _ := APIstub.GetState(args[0])
+	Security := Security{}
 
-	var PaidDurationPeriod int64
-	PaidDurationPeriod = 0
-	var TotalBalance, TotalInterest, DurationInterest, PaidDurationInterest int64
-	TotalBalance = 0
-	TotalInterest = 0
-	j := 0
-	for j < security.RepayPeriod {
-		NextPayInterestDate, _ := generateMaturity(security.IssueDate, j+1, 0, 0)
-		if Today >= NextPayInterestDate {
-			PaidDurationPeriod = int64(j + 1)
+	json.Unmarshal(SecurityAsBytes, &Security)
+
+	var doflg bool
+	doflg = false
+	var PaidDurationInterest int64
+	PaidDurationInterest = 0
+
+	var OwnedDurationDate []string
+	var oldOwnedAmount int64
+	var newOwnedAmount int64
+
+	oldOwnedAmount = 0
+	newOwnedAmount = 0
+
+	var oldOwnedInterest int64
+	var newOwnedInterest int64
+	//var newInterest int64
+	oldOwnedInterest = 0
+	newOwnedInterest = 0
+	//newInterest = 0
+
+	for key, val := range Security.Owners {
+		if val.OwnedBankID == BankID {
+			oldOwnedAmount = Security.Owners[key].OwnedAmount
+			oldOwnedInterest = Security.Owners[key].OwnedInterest
+			newOwnedAmount += oldOwnedAmount
+			newOwnedInterest += oldOwnedInterest
+			myOwnedAmount := float64(Security.Owners[key].OwnedAmount)
+			OwnedInterest := perDayInterest * daySub(Security.IssueDate, Security.MaturityDate) * Security.InterestRate * myOwnedAmount
+			Security.Owners[key].OwnedInterest = int64(OwnedInterest)
+			Security.Owners[key].OwnedDurationInterest = Security.Owners[key].OwnedInterest / int64(Security.RepayPeriod)
+			j := 0
+			var SecurityDurationDate []string
+
+			for j < Security.RepayPeriod {
+				NextPayInterestDate, _ := generateMaturity(Security.IssueDate, j+1, 0, 0)
+				OwnedDurationDate = append(OwnedDurationDate, NextPayInterestDate)
+				SecurityDurationDate = append(SecurityDurationDate, NextPayInterestDate)
+				if Today >= NextPayInterestDate {
+					PaidDurationInterest = newOwnedInterest * int64(j+1)
+				}
+				j = j + 1
+			}
+			Security.Owners[key].OwnedRepay = oldOwnedAmount + Security.Owners[key].OwnedInterest
+			Security.Balance -= Security.Owners[key].OwnedAmount
+			doflg = true
+			break
 		}
-		j = j + 1
 	}
-	var BankID string
-	BankID = ""
-	for key, _ := range security.Owners {
-		newOwnedAmount := float64(security.Owners[key].OwnedAmount)
-		if (BankID != security.Owners[key].OwnedBankID) || (key == 0) {
-			TotalBalance = 0
-			TotalInterest = 0
-			BankID = security.Owners[key].OwnedBankID
-		} else {
-			TotalBalance += int64(newOwnedAmount)
-			OwnedInterest := perDayInterest * daySub(security.IssueDate, security.MaturityDate) * security.InterestRate * newOwnedAmount
-			TotalInterest += int64(OwnedInterest)
-			security.Owners[key].OwnedInterest = int64(OwnedInterest)
-			security.Owners[key].OwnedDurationInterest = security.Owners[key].OwnedInterest / int64(security.RepayPeriod)
-			security.Owners[key].OwnedRepay = security.Owners[key].OwnedAmount + security.Owners[key].OwnedInterest
+	fmt.Printf("oldOwnedAmount: %d\n", oldOwnedAmount)
+	fmt.Printf("oldOwnedInterest: %d\n", oldOwnedInterest)
+	fmt.Printf("newOwnedAmount: %d\n", newOwnedAmount)
+	fmt.Printf("newOwnedInterest: %d\n", newOwnedInterest)
+
+	if doflg == true {
+		for key, val := range Security.SecurityTotals {
+			fmt.Printf("1.Skey: %d\n", key)
+			fmt.Printf("2.Sval: %s\n", val)
+			if val.BankID == BankID {
+				fmt.Printf("3.Skey: %d\n", key)
+				fmt.Printf("4.Sval: %s\n", val)
+				fmt.Printf("oldOwnedAmount: %d\n", oldOwnedAmount)
+				fmt.Printf("oldOwnedInterest: %d\n", oldOwnedInterest)
+				fmt.Printf("newOwnedAmount: %d\n", newOwnedAmount)
+				fmt.Printf("newOwnedInterest: %d\n", newOwnedInterest)
+				Security.SecurityTotals[key].TotalBalance = newOwnedAmount
+				Security.SecurityTotals[key].TotalInterest = newOwnedInterest
+				Security.SecurityTotals[key].DurationInterest = Security.SecurityTotals[key].TotalInterest / int64(Security.RepayPeriod)
+				Security.SecurityTotals[key].PaidDurationInterest = PaidDurationInterest
+				Security.SecurityTotals[key].UpdateTime = TimeNow
+				break
+			}
 		}
-		fmt.Printf("BankID: %s\n", BankID)
-		fmt.Printf("TotalBalance: %d\n", TotalBalance)
-		fmt.Printf("TotalInterest\n", TotalInterest)
 	}
 
-	for key, val := range security.SecurityTotals {
-		fmt.Printf("1.Skey: %d\n", key)
-		fmt.Printf("2.Sval: %s\n", val)
-
-		Interest := int64(TotalInterest)
-		DurationInterest = Interest / int64(security.RepayPeriod)
-		PaidDurationInterest = DurationInterest * PaidDurationPeriod
-		fmt.Printf("Interest: %d\n", Interest)
-		fmt.Printf("DurationInterest: %d\n", DurationInterest)
-		fmt.Printf("PaidDurationPeriod: %d\n", PaidDurationPeriod)
-		fmt.Printf("PaidDurationInterest: %d\n", PaidDurationInterest)
-		security.SecurityTotals[key].TotalBalance = TotalBalance
-		security.SecurityTotals[key].TotalInterest = TotalInterest
-		security.SecurityTotals[key].DurationInterest = DurationInterest
-		security.SecurityTotals[key].PaidDurationInterest = PaidDurationInterest
-		security.SecurityTotals[key].UpdateTime = TimeNow
-
+	SecurityAsBytes, _ = json.Marshal(Security)
+	err2 := APIstub.PutState(args[0], SecurityAsBytes)
+	if err2 != nil {
+		return shim.Error("Failed to change state")
 	}
 
-	securityAsBytes, err := json.Marshal(security)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-	err = stub.PutState(newSecurityID, securityAsBytes)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-	return shim.Success(nil)
+	return shim.Success(SecurityAsBytes)
 }
 
 // The main function is only relevant in unit test mode. Only included here for completeness.
