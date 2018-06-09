@@ -39,7 +39,7 @@ Navigate to the chaincode-docker-devmode directory of the fabric-samples clone:
 1. updateOwnerInterest(APIstub, args)
 1. getHistoryForSecurity(APIstub, args)
 1. queryAllSecurityKeys(APIstub, args)
-1. updateSecurityTotals(APIstub, args)
+1. changeSecurityTotals(APIstub, args)
 
 ### Account Chaincode Functions
 1. initAccount(APIstub, args)
@@ -82,6 +82,7 @@ Navigate to the chaincode-docker-devmode directory of the fabric-samples clone:
 1. queryAllQueuedTransactions(APIstub, args)
 1. queryAllHistoryTransactions(APIstub, args)
 1. queryAllTransactionKeys(APIstub, args)
+1. queryHistoryTransactionStatus(APIstub, args)
 
 ### Other Chaincode Functions
 1. mapFunction(APIstub, function, args)
