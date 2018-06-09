@@ -13,7 +13,7 @@ Navigate to the chaincode-docker-devmode directory of the fabric-samples clone:
 
 `go build`
 
-`CORE_PEER_ADDRESS=peer:7052 CORE_CHAINCODE_ID_NAME=mycc:0 ./sacc`
+`CORE_PEER_ADDRESS=peer:7052 CORE_CHAINCODE_ID_NAME=mycc:0 ./cgschaincode`
 ##### Terminal 3 - Use the chaincode
 `docker exec -it cli bash`
 
