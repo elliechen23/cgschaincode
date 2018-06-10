@@ -631,11 +631,11 @@ func validateTransaction(
 	}
 	transaction.TXType = TXType
 	TXFrom := strings.ToUpper(args[1])
-	BankFrom := "BANK" + SubString(TXFrom, 0, 3)
+	BankFrom := "BK" + SubString(TXFrom, 0, 3)
 	TXID = BankFrom + TXType + TXFrom + TimeNow
 	transaction.TXID = TXID
 	TXTo := strings.ToUpper(args[2])
-	BankTo := "BANK" + SubString(TXTo, 0, 3)
+	BankTo := "BK" + SubString(TXTo, 0, 3)
 	transaction.TXFrom = TXFrom
 	transaction.TXTo = TXTo
 	if TXFrom == TXTo {
@@ -1055,8 +1055,9 @@ func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXSt
 	transaction, err := getTransactionStructFromID(stub, TXID)
 	transaction.TXStatus = TXStatus
 
-	var TXMemo string
+	var TXMemo, TXErrMsg string
 	TXMemo = ""
+	TXErrMsg = ""
 	if TXStatus == "PaymentError" {
 		TXMemo = "同資款不足"
 		transaction.TXMemo = TXMemo
@@ -1069,13 +1070,19 @@ func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXSt
 		TXMemo = ""
 		transaction.TXMemo = TXMemo
 	}
+	if TXStatus == "Finished" {
+		TXMemo = ""
+		transaction.TXMemo = TXMemo
+		transaction.TXErrMsg = TXErrMsg
+	}
 
 	if TXStatus != "Cancelled" && TXStatus != "PaymentError" {
-		fmt.Printf("2 updateTransactionStatus TXStatus = %s\n", TXStatus)
 		transaction.IsFrozen = true
-		fmt.Printf("3 updateTransactionStatus MatchedTXID = %s\n", MatchedTXID)
-		transaction.MatchedTXID = MatchedTXID
+	} else {
+		transaction.IsFrozen = false
 	}
+	fmt.Printf("3 updateTransactionStatus MatchedTXID = %s\n", MatchedTXID)
+	transaction.MatchedTXID = MatchedTXID
 	fmt.Printf("4 updateTransactionStatus transaction MatchedTXID = %s\n", transaction.MatchedTXID)
 
 	transaction.UpdateTime = TimeNow
@@ -1167,8 +1174,9 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 	var doflg1, doflg2 bool
 	doflg1 = false
 	doflg2 = false
-	var TXMemo string
+	var TXMemo, TXErrMsg string
 	TXMemo = ""
+	TXErrMsg = ""
 	if TXStatus == "PaymentError" {
 		TXMemo = "同資款不足"
 	}
@@ -1178,10 +1186,16 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 	if TXStatus == "Matched" {
 		TXMemo = ""
 	}
+	if TXStatus == "Finished" {
+		TXMemo = ""
+	}
 
 	for key, val := range queuedTX.TXIDs {
 		fmt.Printf("1.ATXIDs: %s\n", TXID)
 		fmt.Printf("2.AMatchedTXID: %s\n", MatchedTXID)
+		if TXStatus == "Finished" {
+			queuedTX.Transactions[key].TXErrMsg = TXErrMsg
+		}
 		if val == TXID {
 			fmt.Printf("3.AQkey: %d\n", key)
 			fmt.Printf("4.AQval: %s\n", val)
@@ -1189,7 +1203,6 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 			queuedTX.Transactions[key].TXMemo = TXMemo
 			queuedTX.Transactions[key].UpdateTime = TimeNow
 			doflg1 = true
-
 		}
 		if val == MatchedTXID {
 			fmt.Printf("5.AQkey: %d\n", key)
@@ -1228,8 +1241,9 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 	var doflg1, doflg2 bool
 	doflg1 = false
 	doflg2 = false
-	var TXMemo string
+	var TXMemo, TXErrMsg string
 	TXMemo = ""
+	TXErrMsg = ""
 	if TXStatus == "PaymentError" {
 		TXMemo = "同資款不足"
 	}
@@ -1239,10 +1253,16 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 	if TXStatus == "Matched" {
 		TXMemo = ""
 	}
+	if TXStatus == "Finished" {
+		TXMemo = ""
+	}
 
 	for key, val := range historyTX.TXIDs {
 		fmt.Printf("7.ATXIDs: %s\n", TXID)
 		fmt.Printf("8.AMatchedTXID: %s\n", MatchedTXID)
+		if TXStatus == "Finished" {
+			historyTX.Transactions[key].TXErrMsg = TXErrMsg
+		}
 		if val == TXID {
 			fmt.Printf("9.AHkey: %d\n", key)
 			fmt.Printf("10.AHval: %s\n", val)
@@ -1792,15 +1812,13 @@ func validateCorrectTransaction(
 	}
 	transaction.TXType = TXType
 	TXFrom := strings.ToUpper(args[1])
-	BankFrom := "BANK" + SubString(TXFrom, 0, 3)
+	BankFrom := "BK" + SubString(TXFrom, 0, 3)
 	transaction.TXFrom = TXFrom
 	transaction.BankFrom = BankFrom
-	//TXKEY := SubString(TimeNow, 0, 8)
-	//HTXKEY := "H" + TXKEY
 	TXHcode := BankFrom + TXType + TXFrom + TimeNow
 	transaction.TXID = TXHcode
 	TXTo := strings.ToUpper(args[2])
-	BankTo := "BANK" + SubString(TXTo, 0, 3)
+	BankTo := "BK" + SubString(TXTo, 0, 3)
 	transaction.TXTo = TXTo
 	transaction.BankTo = BankTo
 	if TXFrom == TXTo {
@@ -2218,6 +2236,71 @@ func (s *SmartContract) getHistoryForTransaction(APIstub shim.ChaincodeStubInter
 	return shim.Success(buffer.Bytes())
 }
 
+//peer chaincode query -n mycc -c '{"Args":["getHistoryTXIDForTransaction","BK004S00400000000120180610041355","9476d9983cd1914d0c041b810d99dbbeee9f710bd03ee73ba71ff6770dc34b7a"]}' -C myc
+func (s *SmartContract) getHistoryTXIDForTransaction(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
+
+	if len(args) < 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 2")
+	}
+
+	TransactionID := args[0]
+	TXID := args[1]
+
+	fmt.Printf("- start getHistoryTXIDForTransaction: %s\n", TransactionID)
+	fmt.Printf("- start getHistoryTXIDForTransaction: %s\n", TXID)
+
+	resultsIterator, err := APIstub.GetHistoryForKey(TransactionID)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	defer resultsIterator.Close()
+
+	// buffer is a JSON array containing historic values for the marble
+	var buffer bytes.Buffer
+	buffer.WriteString("[")
+
+	for resultsIterator.HasNext() {
+		response, err := resultsIterator.Next()
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+
+		if response.TxId == TXID {
+			buffer.WriteString("{\"TxId\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(response.TxId)
+			buffer.WriteString("\"")
+			buffer.WriteString(", \"Value\":")
+			// if it was a delete operation on given key, then we need to set the
+			//corresponding value null. Else, we will write the response.Value
+			//as-is (as the Value itself a JSON marble)
+			if response.IsDelete {
+				buffer.WriteString("null")
+			} else {
+				buffer.WriteString(string(response.Value))
+			}
+
+			buffer.WriteString(", \"Timestamp\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(time.Unix(response.Timestamp.Seconds, int64(response.Timestamp.Nanos)).String())
+			buffer.WriteString("\"")
+
+			buffer.WriteString(", \"IsDelete\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(strconv.FormatBool(response.IsDelete))
+			buffer.WriteString("\"")
+			buffer.WriteString("}")
+
+			break
+		}
+	}
+	buffer.WriteString("]")
+
+	fmt.Printf("- getHistoryTXIDForTransaction returning:\n%s\n", buffer.String())
+
+	return shim.Success(buffer.Bytes())
+}
+
 //peer chaincode query -n mycc3 -c '{"Args":["getHistoryForQueuedTransaction", "H20180415"]}' -C myc
 
 func (s *SmartContract) getHistoryForQueuedTransaction(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
@@ -2281,6 +2364,71 @@ func (s *SmartContract) getHistoryForQueuedTransaction(APIstub shim.ChaincodeStu
 	buffer.WriteString("]")
 
 	fmt.Printf("- getHistoryForQueuedTransaction returning:\n%s\n", buffer.String())
+
+	return shim.Success(buffer.Bytes())
+}
+
+//peer chaincode query -n mycc -c '{"Args":["getHistoryTXIDForQueuedTransaction","20180610","a4723f60d5c85d29a2107382fb8e3c8c1624924b970efa04f313727a0dfaa0ff"]}' -C myc
+func (s *SmartContract) getHistoryTXIDForQueuedTransaction(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
+
+	if len(args) < 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 2")
+	}
+
+	QueuedTransactionID := args[0]
+	TXID := args[1]
+
+	fmt.Printf("- start getHistoryTXIDForQueuedTransaction: %s\n", QueuedTransactionID)
+	fmt.Printf("- start getHistoryTXIDForQueuedTransaction: %s\n", TXID)
+
+	resultsIterator, err := APIstub.GetHistoryForKey(QueuedTransactionID)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	defer resultsIterator.Close()
+
+	// buffer is a JSON array containing historic values for the marble
+	var buffer bytes.Buffer
+	buffer.WriteString("[")
+
+	for resultsIterator.HasNext() {
+		response, err := resultsIterator.Next()
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+
+		if response.TxId == TXID {
+			buffer.WriteString("{\"TxId\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(response.TxId)
+			buffer.WriteString("\"")
+			buffer.WriteString(", \"Value\":")
+			// if it was a delete operation on given key, then we need to set the
+			//corresponding value null. Else, we will write the response.Value
+			//as-is (as the Value itself a JSON marble)
+			if response.IsDelete {
+				buffer.WriteString("null")
+			} else {
+				buffer.WriteString(string(response.Value))
+			}
+
+			buffer.WriteString(", \"Timestamp\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(time.Unix(response.Timestamp.Seconds, int64(response.Timestamp.Nanos)).String())
+			buffer.WriteString("\"")
+
+			buffer.WriteString(", \"IsDelete\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(strconv.FormatBool(response.IsDelete))
+			buffer.WriteString("\"")
+			buffer.WriteString("}")
+
+			break
+		}
+	}
+	buffer.WriteString("]")
+
+	fmt.Printf("- getHistoryTXIDForQueuedTransaction returning:\n%s\n", buffer.String())
 
 	return shim.Success(buffer.Bytes())
 }
@@ -2386,7 +2534,6 @@ func (s *SmartContract) queryAllQueuedTransactions(APIstub shim.ChaincodeStubInt
 }
 
 //peer chaincode query -n mycc3 -c '{"Args":["queryAllHistoryTransactions", "20180415","20180416"]}' -C myc -v 1.0
-
 func (s *SmartContract) queryAllHistoryTransactions(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
 
 	if len(args) != 2 {
@@ -2481,6 +2628,81 @@ func (s *SmartContract) queryAllTransactionKeys(APIstub shim.ChaincodeStubInterf
 
 	return shim.Success(jsonKeys)
 
+}
+
+//peer chaincode query -n mycc -c '{"Args":["queryQueuedTransactionStatus","1070609","Finished"]}' -C myc
+func (s *SmartContract) queryQueuedTransactionStatus(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
+
+	if len(args) != 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 2")
+	}
+	TXKEY := args[0]
+	TXStatus := args[1]
+
+	QueuedAsBytes, _ := APIstub.GetState(TXKEY)
+	QueuedTX := QueuedTransaction{}
+	json.Unmarshal(QueuedAsBytes, &QueuedTX)
+
+	var doflg bool
+	doflg = false
+	var buffer bytes.Buffer
+	buffer.WriteString("[")
+	buffer.WriteString("{\"TXKEY\":")
+	buffer.WriteString("\"")
+	buffer.WriteString(QueuedTX.TXKEY)
+	buffer.WriteString("\"")
+
+	for key, val := range QueuedTX.Transactions {
+		if val.TXStatus == TXStatus {
+			buffer.WriteString(", \"QueuedKey\":")
+			buffer.WriteString(strconv.Itoa(key))
+			buffer.WriteString(", \"TXID\":")
+			buffer.WriteString(QueuedTX.Transactions[key].TXID)
+			buffer.WriteString(", \"TXType\":")
+			buffer.WriteString(QueuedTX.Transactions[key].TXType)
+			buffer.WriteString(", \"TXFrom\":")
+			buffer.WriteString(QueuedTX.Transactions[key].TXFrom)
+			buffer.WriteString(", \"TXTo\":")
+			buffer.WriteString(QueuedTX.Transactions[key].TXTo)
+			buffer.WriteString(", \"BankFrom\":")
+			buffer.WriteString(QueuedTX.Transactions[key].BankFrom)
+			buffer.WriteString(", \"BankTo\":")
+			buffer.WriteString(QueuedTX.Transactions[key].BankTo)
+			buffer.WriteString(", \"SecurityID\":")
+			buffer.WriteString(QueuedTX.Transactions[key].SecurityID)
+			buffer.WriteString(", \"SecurityAmount\":")
+			buffer.WriteString(strconv.FormatInt(QueuedTX.Transactions[key].SecurityAmount, 10))
+			buffer.WriteString(", \"Payment\":")
+			buffer.WriteString(strconv.FormatInt(QueuedTX.Transactions[key].Payment, 10))
+			buffer.WriteString(", \"TXStatus\":")
+			buffer.WriteString(QueuedTX.Transactions[key].TXStatus)
+			buffer.WriteString(", \"TXMemo\":")
+			buffer.WriteString(QueuedTX.Transactions[key].TXMemo)
+			buffer.WriteString(", \"TXErrMsg\":")
+			buffer.WriteString(QueuedTX.Transactions[key].TXErrMsg)
+			buffer.WriteString(", \"TXHcode\":")
+			buffer.WriteString(QueuedTX.Transactions[key].TXHcode)
+			buffer.WriteString(", \"MatchedTXID\":")
+			buffer.WriteString(QueuedTX.Transactions[key].MatchedTXID)
+			buffer.WriteString(", \"CreateTime\":")
+			buffer.WriteString(QueuedTX.Transactions[key].CreateTime)
+			buffer.WriteString(", \"UpdateTime\":")
+			buffer.WriteString(QueuedTX.Transactions[key].UpdateTime)
+			buffer.WriteString(", \"TXIndex\":")
+			buffer.WriteString(QueuedTX.Transactions[key].TXIndex)
+			buffer.WriteString(", \"TXSIndex\":")
+			buffer.WriteString(QueuedTX.Transactions[key].TXSIndex)
+			doflg = true
+		}
+	}
+	if doflg != true {
+		return shim.Error("Failed to find QueuedTransaction ")
+	}
+	buffer.WriteString("}")
+	buffer.WriteString("]")
+	fmt.Printf("%s", buffer.String())
+
+	return shim.Success(buffer.Bytes())
 }
 
 //peer chaincode query -n mycc -c '{"Args":["queryHistoryTransactionStatus","H1070609","Finished"]}' -C myc

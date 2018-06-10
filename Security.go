@@ -161,12 +161,14 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) peer.Respons
 		return s.queryOwnerAccount(APIstub, args)
 	} else if function == "queryOwnerLength" {
 		return s.queryOwnerLength(APIstub, args)
+	} else if function == "queryBankSecurityTotals" {
+		return s.queryBankSecurityTotals(APIstub, args)
 	} else if function == "changeSecurity" {
 		return s.changeSecurity(APIstub, args)
 	} else if function == "changeSecurityStatus" {
 		return s.changeSecurityStatus(APIstub, args)
-	} else if function == "changeSecurityTotals" {
-		return s.changeSecurityTotals(APIstub, args)
+	} else if function == "changeBankSecurityTotals" {
+		return s.changeBankSecurityTotals(APIstub, args)
 	} else if function == "changeOwnerAvaliable" {
 		return s.changeOwnerAvaliable(APIstub, args)
 	} else if function == "deleteSecurity" {
@@ -177,6 +179,8 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) peer.Respons
 		return s.updateOwnerInterest(APIstub, args)
 	} else if function == "getHistoryForSecurity" {
 		return s.getHistoryForSecurity(APIstub, args)
+	} else if function == "getHistoryTXIDForSecurity" {
+		return s.getHistoryTXIDForSecurity(APIstub, args)
 	} else if function == "queryAllSecurityKeys" {
 		return s.queryAllSecurityKeys(APIstub, args)
 		// Account Functions
@@ -208,6 +212,8 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) peer.Respons
 		return s.queryAllAccounts(APIstub, args)
 	} else if function == "getHistoryForAccount" {
 		return s.getHistoryForAccount(APIstub, args)
+	} else if function == "getHistoryTXIDForAccount" {
+		return s.getHistoryTXIDForAccount(APIstub, args)
 	} else if function == "queryAllAccountKeys" {
 		return s.queryAllAccountKeys(APIstub, args)
 		// Bank Functions
@@ -225,6 +231,8 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) peer.Respons
 		return s.queryAllBanks(APIstub, args)
 	} else if function == "getHistoryForBank" {
 		return s.getHistoryForBank(APIstub, args)
+	} else if function == "getHistoryTXIDForBank" {
+		return s.getHistoryTXIDForBank(APIstub, args)
 	} else if function == "queryAllBankKeys" {
 		return s.queryAllBankKeys(APIstub, args)
 		// Transaction Functions
@@ -244,8 +252,12 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) peer.Respons
 		return s.queryHistoryTXKEYTransactions(APIstub, args)
 	} else if function == "getHistoryForTransaction" {
 		return s.getHistoryForTransaction(APIstub, args)
+	} else if function == "getHistoryTXIDForTransaction" {
+		return s.getHistoryTXIDForTransaction(APIstub, args)
 	} else if function == "getHistoryForQueuedTransaction" {
 		return s.getHistoryForQueuedTransaction(APIstub, args)
+	} else if function == "getHistoryTXIDForQueuedTransaction" {
+		return s.getHistoryTXIDForQueuedTransaction(APIstub, args)
 	} else if function == "queryAllTransactions" {
 		return s.queryAllTransactions(APIstub, args)
 	} else if function == "queryAllQueuedTransactions" {
@@ -254,6 +266,8 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) peer.Respons
 		return s.queryAllHistoryTransactions(APIstub, args)
 	} else if function == "queryAllTransactionKeys" {
 		return s.queryAllTransactionKeys(APIstub, args)
+	} else if function == "queryQueuedTransactionStatus" {
+		return s.queryQueuedTransactionStatus(APIstub, args)
 	} else if function == "queryHistoryTransactionStatus" {
 		return s.queryHistoryTransactionStatus(APIstub, args)
 	} else {
@@ -1147,6 +1161,71 @@ func (s *SmartContract) getHistoryForSecurity(APIstub shim.ChaincodeStubInterfac
 	return shim.Success(buffer.Bytes())
 }
 
+//peer chaincode query -n mycc -c '{"Args":["getHistoryTXIDForSecurity","A07106","a4723f60d5c85d29a2107382fb8e3c8c1624924b970efa04f313727a0dfaa0ff"]}' -C myc
+func (s *SmartContract) getHistoryTXIDForSecurity(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
+
+	if len(args) < 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 2")
+	}
+
+	SecurityID := args[0]
+	TXID := args[1]
+
+	fmt.Printf("- start getHistoryTXIDForSecurity: %s\n", SecurityID)
+	fmt.Printf("- start getHistoryTXIDForSecurity: %s\n", TXID)
+
+	resultsIterator, err := APIstub.GetHistoryForKey(SecurityID)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	defer resultsIterator.Close()
+
+	// buffer is a JSON array containing historic values for the marble
+	var buffer bytes.Buffer
+	buffer.WriteString("[")
+
+	for resultsIterator.HasNext() {
+		response, err := resultsIterator.Next()
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+
+		if response.TxId == TXID {
+			buffer.WriteString("{\"TxId\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(response.TxId)
+			buffer.WriteString("\"")
+			buffer.WriteString(", \"Value\":")
+			// if it was a delete operation on given key, then we need to set the
+			//corresponding value null. Else, we will write the response.Value
+			//as-is (as the Value itself a JSON marble)
+			if response.IsDelete {
+				buffer.WriteString("null")
+			} else {
+				buffer.WriteString(string(response.Value))
+			}
+
+			buffer.WriteString(", \"Timestamp\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(time.Unix(response.Timestamp.Seconds, int64(response.Timestamp.Nanos)).String())
+			buffer.WriteString("\"")
+
+			buffer.WriteString(", \"IsDelete\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(strconv.FormatBool(response.IsDelete))
+			buffer.WriteString("\"")
+			buffer.WriteString("}")
+
+			break
+		}
+	}
+	buffer.WriteString("]")
+
+	fmt.Printf("- getHistoryTXIDForSecurity returning:\n%s\n", buffer.String())
+
+	return shim.Success(buffer.Bytes())
+}
+
 func (s *SmartContract) queryAllSecurityKeys(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
 
 	if len(args) < 2 {
@@ -1194,43 +1273,46 @@ func (s *SmartContract) queryAllSecurityKeys(APIstub shim.ChaincodeStubInterface
 
 }
 
-//peer chaincode invoke -n mycc -c '{"Args":["changeSecurityTotals", "A07103","002"]}' -C myc
-func (s *SmartContract) changeSecurityTotals(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
+//peer chaincode invoke -n mycc -c '{"Args":["changeBankSecurityTotals", "A07103","002","20190701"]}' -C myc
+func (s *SmartContract) changeBankSecurityTotals(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
 
-	if len(args) != 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
+	if len(args) != 3 {
+		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
-
 	TimeNow := time.Now().Format(timelayout)
 	Today := SubString(TimeNow, 0, 8)
+
 	SecurityID := args[0]
 	BankID := args[1]
-	fmt.Printf("BankID=%s\n", SecurityID)
+	BaselineDate := args[2]
+	fmt.Printf("SecurityID=%s\n", SecurityID)
 	fmt.Printf("BankID=%s\n", BankID)
-
-	SecurityAsBytes, _ := APIstub.GetState(args[0])
+	fmt.Printf("BaselineDate=%s\n", BaselineDate)
+	SecurityAsBytes, _ := APIstub.GetState(SecurityID)
 	Security := Security{}
-
 	json.Unmarshal(SecurityAsBytes, &Security)
 
 	var doflg bool
 	doflg = false
 	var PaidDurationInterest int64
-	PaidDurationInterest = 0
-
 	var OwnedDurationDate []string
 	var oldOwnedAmount int64
 	var newOwnedAmount int64
-
-	oldOwnedAmount = 0
-	newOwnedAmount = 0
-
 	var oldOwnedInterest int64
 	var newOwnedInterest int64
-	//var newInterest int64
+	var OwnedDurationInterest int64
+
+	PaidDurationInterest = 0
+	oldOwnedAmount = 0
+	newOwnedAmount = 0
 	oldOwnedInterest = 0
 	newOwnedInterest = 0
-	//newInterest = 0
+	OwnedDurationInterest = 0
+
+	if BaselineDate != "" {
+		Today = BaselineDate
+	}
+	fmt.Printf("Today=%s\n", Today)
 
 	for key, val := range Security.Owners {
 		if val.OwnedBankID == BankID {
@@ -1238,10 +1320,7 @@ func (s *SmartContract) changeSecurityTotals(APIstub shim.ChaincodeStubInterface
 			oldOwnedInterest = Security.Owners[key].OwnedInterest
 			newOwnedAmount += oldOwnedAmount
 			newOwnedInterest += oldOwnedInterest
-			myOwnedAmount := float64(Security.Owners[key].OwnedAmount)
-			OwnedInterest := perDayInterest * daySub(Security.IssueDate, Security.MaturityDate) * Security.InterestRate * myOwnedAmount
-			Security.Owners[key].OwnedInterest = int64(OwnedInterest)
-			Security.Owners[key].OwnedDurationInterest = Security.Owners[key].OwnedInterest / int64(Security.RepayPeriod)
+			OwnedDurationInterest = newOwnedInterest / int64(Security.RepayPeriod)
 			j := 0
 			var SecurityDurationDate []string
 
@@ -1250,14 +1329,11 @@ func (s *SmartContract) changeSecurityTotals(APIstub shim.ChaincodeStubInterface
 				OwnedDurationDate = append(OwnedDurationDate, NextPayInterestDate)
 				SecurityDurationDate = append(SecurityDurationDate, NextPayInterestDate)
 				if Today >= NextPayInterestDate {
-					PaidDurationInterest = newOwnedInterest * int64(j+1)
+					PaidDurationInterest = OwnedDurationInterest * int64(j+1)
 				}
 				j = j + 1
 			}
-			Security.Owners[key].OwnedRepay = oldOwnedAmount + Security.Owners[key].OwnedInterest
-			Security.Balance -= Security.Owners[key].OwnedAmount
 			doflg = true
-			break
 		}
 	}
 	fmt.Printf("oldOwnedAmount: %d\n", oldOwnedAmount)
@@ -1281,18 +1357,68 @@ func (s *SmartContract) changeSecurityTotals(APIstub shim.ChaincodeStubInterface
 				Security.SecurityTotals[key].DurationInterest = Security.SecurityTotals[key].TotalInterest / int64(Security.RepayPeriod)
 				Security.SecurityTotals[key].PaidDurationInterest = PaidDurationInterest
 				Security.SecurityTotals[key].UpdateTime = TimeNow
-				break
 			}
 		}
 	}
 
 	SecurityAsBytes, _ = json.Marshal(Security)
-	err2 := APIstub.PutState(args[0], SecurityAsBytes)
+	err2 := APIstub.PutState(SecurityID, SecurityAsBytes)
 	if err2 != nil {
 		return shim.Error("Failed to change state")
 	}
 
 	return shim.Success(SecurityAsBytes)
+}
+
+//peer chaincode query -n mycc -c '{"Args":["queryBankSecurityTotals","A07103","002"]}' -C myc
+func (s *SmartContract) queryBankSecurityTotals(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
+
+	if len(args) != 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 2")
+	}
+
+	SecurityAsBytes, _ := APIstub.GetState(args[0])
+	Security := Security{}
+	json.Unmarshal(SecurityAsBytes, &Security)
+
+	var doflg bool
+	doflg = false
+	var buffer bytes.Buffer
+	buffer.WriteString("[")
+	buffer.WriteString("{\"SecurityID\":")
+	buffer.WriteString("\"")
+	buffer.WriteString(Security.SecurityID)
+	buffer.WriteString("\"")
+
+	for key, val := range Security.SecurityTotals {
+		if val.BankID == args[1] {
+			buffer.WriteString(", \"SecurityTotalsKey\":")
+			buffer.WriteString(strconv.Itoa(key))
+			buffer.WriteString(", \"BankID\":")
+			buffer.WriteString(val.BankID)
+			buffer.WriteString(", \"TotalBalance\":")
+			buffer.WriteString(strconv.FormatInt(val.TotalBalance, 10))
+			buffer.WriteString(", \"TotalInterest\":")
+			buffer.WriteString(strconv.FormatInt(val.TotalInterest, 10))
+			buffer.WriteString(", \"DurationInterest\":")
+			buffer.WriteString(strconv.FormatInt(val.DurationInterest, 10))
+			buffer.WriteString(", \"PaidDurationInterest\":")
+			buffer.WriteString(strconv.FormatInt(val.PaidDurationInterest, 10))
+			buffer.WriteString(", \"CreateTime\":")
+			buffer.WriteString(val.CreateTime)
+			buffer.WriteString(", \"UpdateTime\":")
+			buffer.WriteString(val.UpdateTime)
+			doflg = true
+		}
+	}
+	if doflg != true {
+		return shim.Error("Failed to find SecurityTotals ")
+	}
+	buffer.WriteString("}")
+	buffer.WriteString("]")
+	fmt.Printf("%s", buffer.String())
+
+	return shim.Success(buffer.Bytes())
 }
 
 // The main function is only relevant in unit test mode. Only included here for completeness.

@@ -812,6 +812,71 @@ func (s *SmartContract) getHistoryForAccount(APIstub shim.ChaincodeStubInterface
 	return shim.Success(buffer.Bytes())
 }
 
+//peer chaincode query -n mycc -c '{"Args":["getHistoryTXIDForAccount","002000000001","a4723f60d5c85d29a2107382fb8e3c8c1624924b970efa04f313727a0dfaa0ff"]}' -C myc
+func (s *SmartContract) getHistoryTXIDForAccount(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
+
+	if len(args) < 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 2")
+	}
+
+	AccountID := args[0]
+	TXID := args[1]
+
+	fmt.Printf("- start getHistoryTXIDForAccount: %s\n", AccountID)
+	fmt.Printf("- start getHistoryTXIDForAccount: %s\n", TXID)
+
+	resultsIterator, err := APIstub.GetHistoryForKey(AccountID)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	defer resultsIterator.Close()
+
+	// buffer is a JSON array containing historic values for the marble
+	var buffer bytes.Buffer
+	buffer.WriteString("[")
+
+	for resultsIterator.HasNext() {
+		response, err := resultsIterator.Next()
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+
+		if response.TxId == TXID {
+			buffer.WriteString("{\"TxId\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(response.TxId)
+			buffer.WriteString("\"")
+			buffer.WriteString(", \"Value\":")
+			// if it was a delete operation on given key, then we need to set the
+			//corresponding value null. Else, we will write the response.Value
+			//as-is (as the Value itself a JSON marble)
+			if response.IsDelete {
+				buffer.WriteString("null")
+			} else {
+				buffer.WriteString(string(response.Value))
+			}
+
+			buffer.WriteString(", \"Timestamp\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(time.Unix(response.Timestamp.Seconds, int64(response.Timestamp.Nanos)).String())
+			buffer.WriteString("\"")
+
+			buffer.WriteString(", \"IsDelete\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(strconv.FormatBool(response.IsDelete))
+			buffer.WriteString("\"")
+			buffer.WriteString("}")
+
+			break
+		}
+	}
+	buffer.WriteString("]")
+
+	fmt.Printf("- getHistoryTXIDForAccount returning:\n%s\n", buffer.String())
+
+	return shim.Success(buffer.Bytes())
+}
+
 //peer chaincode query -n mycc -c '{"Args":["queryAllAccountKeys","002000000001" , "004000000009"]}' -C myc
 //Query Result: ["002000000001","002000000002","004000000001","004000000002"]
 
