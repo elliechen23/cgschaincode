@@ -222,22 +222,22 @@ func (s *SmartContract) verifyBankList(
 
 func verifyIdentity(
 	stub shim.ChaincodeStubInterface,
-	bankID string) error {
+	bankID string) string {
 
 	valAsbytes, err := stub.GetState(bankID)
 	if err != nil {
 		errMsg := fmt.Sprintf(
 			"Error: Failed to get state for BankID (%s)",
 			bankID)
-		return errors.New(errMsg)
+		return errMsg
 	} else if valAsbytes == nil {
 		errMsg := fmt.Sprintf(
 			"Error: BankID does not exist (%s)",
 			bankID)
-		return errors.New(errMsg)
+		return errMsg
 	}
 
-	return nil
+	return ""
 }
 
 //peer chaincode query -n mycc -c '{"Args":["queryAllBanks", "000" , "ZZZ"]}' -C myc

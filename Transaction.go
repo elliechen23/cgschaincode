@@ -21,13 +21,13 @@ const QueuedTXObjectType string = "QueuedTX"
 const HistoryTXObjectType string = "HistoryTX"
 const timelayout string = "20060102150405"
 
-//同資flag
+//同資放行處理flag
 const approved0 string = "0"   //預設款夠，Finished
 const approved1 string = "1"   //等待，Waiting4Payment
 const approved2 string = "2"   //不夠，Waiting4Payment
-const approved21 string = "21" //款不足，Cancelled
+const approved21 string = "21" //款不足，Cancalled
 const approved22 string = "22" //放行，Finished
-const approved3 string = "3"   //系統錯誤，Cancelled
+const approved3 string = "3"   //系統錯誤，Cancalled
 
 type Transaction struct {
 	ObjectType     string `json:"docType"`        // default set to "Transaction"
@@ -41,7 +41,7 @@ type Transaction struct {
 	SecurityAmount int64  `json:"SecurityAmount"` // SecurityAmount
 	Payment        int64  `json:"Payment"`        // Payment
 	isPutToQueue   bool   `json:"isPutToQueue"`   // isPutToQueue
-	TXStatus       string `json:"TXStatus"`       // Pending, Matched, Finished, Cancelled, PaymentError,
+	TXStatus       string `json:"TXStatus"`       // Pending, Matched, Finished, Cancalled, PaymentError,
 	IsFrozen       bool   `json:"isFrozen"`
 	CreateTime     string `json:"createTime"`
 	UpdateTime     string `json:"updateTime"`
@@ -128,13 +128,13 @@ func (s *SmartContract) submitApproveTransaction(
 		NewStatus = "PaymentError"
 	} else if ApproveFlag == approved21 {
 		isApproved = false
-		NewStatus = "Cancalled"
-	} else if ApproveFlag == approved21 {
+		NewStatus = "Cancalled1"
+	} else if ApproveFlag == approved22 {
 		isApproved = true
 		NewStatus = "Finished"
 	} else if ApproveFlag == approved3 {
 		isApproved = false
-		NewStatus = "Cancalled"
+		NewStatus = "Cancalled2"
 	}
 
 	transaction, err := getTransactionStructFromID(stub, TXID)
@@ -165,11 +165,11 @@ func (s *SmartContract) submitApproveTransaction(
 			return shim.Error(err.Error())
 		}
 
-		err = updateTransactionStatus(stub, TXID, NewStatus, "")
+		err = updateTransactionStatus(stub, TXID, NewStatus, MatchedTXID)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
-		err = updateTransactionStatus(stub, MatchedTXID, NewStatus, "")
+		err = updateTransactionStatus(stub, MatchedTXID, NewStatus, TXID)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
@@ -466,6 +466,9 @@ func (s *SmartContract) securityTransfer(
 									historyNewTX.Transactions[key].TXStatus = "Finished"
 									historyNewTX.TXStatus[key] = "Finished"
 									newTX.TXStatus = "Finished"
+									queuedTx.Transactions[key].TXMemo = ""
+									historyNewTX.Transactions[key].TXMemo = ""
+									newTX.TXMemo = ""
 									err := updateTransactionStatus(stub, val.TXID, "Finished", TXID)
 									if err != nil {
 										//return shim.Error(err.Error())
@@ -476,6 +479,9 @@ func (s *SmartContract) securityTransfer(
 									historyNewTX.Transactions[key].TXStatus = "Waiting4Payment"
 									historyNewTX.TXStatus[key] = "Waiting4Payment"
 									newTX.TXStatus = "Waiting4Payment"
+									queuedTx.Transactions[key].TXMemo = "等待同資回應"
+									historyNewTX.Transactions[key].TXMemo = "等待同資回應"
+									newTX.TXMemo = "等待同資回應"
 									err := updateTransactionStatus(stub, val.TXID, "Waiting4Payment", TXID)
 									if err != nil {
 										//return shim.Error(err.Error())
@@ -487,6 +493,9 @@ func (s *SmartContract) securityTransfer(
 								historyNewTX.Transactions[key].TXStatus = "Finished"
 								historyNewTX.TXStatus[key] = "Finished"
 								newTX.TXStatus = "Finished"
+								queuedTx.Transactions[key].TXMemo = ""
+								historyNewTX.Transactions[key].TXMemo = ""
+								newTX.TXMemo = ""
 								err := updateTransactionStatus(stub, val.TXID, "Finished", TXID)
 								if err != nil {
 									//return shim.Error(err.Error())
@@ -498,6 +507,9 @@ func (s *SmartContract) securityTransfer(
 							historyNewTX.Transactions[key].TXStatus = "Finished"
 							historyNewTX.TXStatus[key] = "Finished"
 							newTX.TXStatus = "Finished"
+							queuedTx.Transactions[key].TXMemo = ""
+							historyNewTX.Transactions[key].TXMemo = ""
+							newTX.TXMemo = ""
 							err := updateTransactionStatus(stub, val.TXID, "Finished", TXID)
 							if err != nil {
 								//return shim.Error(err.Error())
@@ -544,12 +556,14 @@ func (s *SmartContract) securityTransfer(
 				queuedTx.TXKEY = TXKEY
 				queuedTx.Transactions = append(queuedTx.Transactions, newTX)
 				queuedTx.TXIndexs = append(queuedTx.TXIndexs, TXIndex)
+				queuedTx.TXSIndexs = append(queuedTx.TXSIndexs, TXSIndex)
 				queuedTx.TXIDs = append(queuedTx.TXIDs, TXID)
 
 				historyNewTX.ObjectType = HistoryTXObjectType
 				historyNewTX.TXKEY = HTXKEY
 				historyNewTX.Transactions = append(historyNewTX.Transactions, newTX)
 				historyNewTX.TXIndexs = append(historyNewTX.TXIndexs, TXIndex)
+				historyNewTX.TXSIndexs = append(historyNewTX.TXSIndexs, TXSIndex)
 				historyNewTX.TXIDs = append(historyNewTX.TXIDs, TXID)
 				historyNewTX.TXStatus = append(historyNewTX.TXStatus, newTX.TXStatus)
 				historyNewTX.TXKinds = append(historyNewTX.TXKinds, TXKinds)
@@ -640,6 +654,10 @@ func validateTransaction(
 	transaction.TXTo = TXTo
 	if TXFrom == TXTo {
 		return transaction, false, "TXFrom can not equal to TXTo."
+	}
+	BankFromID := "BANK" + SubString(TXFrom, 0, 3)
+	if verifyIdentity(stub, BankFromID) != "" {
+		return transaction, false, "BankFromID does not exits in the BankList."
 	}
 	transaction.BankFrom = BankFrom
 	transaction.BankTo = BankTo
@@ -1054,29 +1072,48 @@ func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXSt
 	TimeNow := time.Now().Format(timelayout)
 	transaction, err := getTransactionStructFromID(stub, TXID)
 	transaction.TXStatus = TXStatus
-
 	var TXMemo, TXErrMsg string
 	TXMemo = ""
 	TXErrMsg = ""
+
+	if TXStatus == "Waiting4Payment" {
+		TXMemo = "等待同資回應"
+		transaction.TXMemo = TXMemo
+		transaction.TXStatus = "Waiting4Payment"
+	}
 	if TXStatus == "PaymentError" {
 		TXMemo = "同資款不足"
 		transaction.TXMemo = TXMemo
+		transaction.TXStatus = "PaymentError"
 	}
-	if TXStatus == "Cancelled" {
+	if TXStatus == "Cancalled" {
+		TXMemo = "交易被取消"
+		transaction.TXMemo = TXMemo
+		transaction.TXStatus = "Cancalled"
+	}
+	if TXStatus == "Cancalled1" {
 		TXMemo = "取消交易"
 		transaction.TXMemo = TXMemo
+		transaction.TXStatus = "Cancalled"
+	}
+	if TXStatus == "Cancalled2" {
+		TXMemo = "同資系統錯誤"
+		transaction.TXMemo = TXMemo
+		transaction.TXStatus = "Cancalled"
 	}
 	if TXStatus == "Matched" {
 		TXMemo = ""
 		transaction.TXMemo = TXMemo
+		transaction.TXStatus = "Matched"
 	}
 	if TXStatus == "Finished" {
 		TXMemo = ""
 		transaction.TXMemo = TXMemo
 		transaction.TXErrMsg = TXErrMsg
+		transaction.TXStatus = "Finished"
 	}
 
-	if TXStatus != "Cancelled" && TXStatus != "PaymentError" {
+	if TXStatus != "Cancalled" && TXStatus != "PaymentError" {
 		transaction.IsFrozen = true
 	} else {
 		transaction.IsFrozen = false
@@ -1174,20 +1211,38 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 	var doflg1, doflg2 bool
 	doflg1 = false
 	doflg2 = false
-	var TXMemo, TXErrMsg string
+	var NewTXStatus, TXMemo, TXErrMsg string
+	NewTXStatus = TXStatus
 	TXMemo = ""
 	TXErrMsg = ""
+
+	if TXStatus == "Waiting4Payment" {
+		TXMemo = "等待同資回應"
+		NewTXStatus = "Waiting4Payment"
+	}
 	if TXStatus == "PaymentError" {
 		TXMemo = "同資款不足"
+		NewTXStatus = "PaymentError"
 	}
-	if TXStatus == "Cancelled" {
+	if TXStatus == "Cancalled" {
+		TXMemo = "交易被取消"
+		NewTXStatus = "Cancalled"
+	}
+	if TXStatus == "Cancalled1" {
 		TXMemo = "取消交易"
+		NewTXStatus = "Cancalled"
+	}
+	if TXStatus == "Cancalled2" {
+		TXMemo = "同資系統錯誤"
+		NewTXStatus = "Cancalled"
 	}
 	if TXStatus == "Matched" {
 		TXMemo = ""
+		NewTXStatus = "Matched"
 	}
 	if TXStatus == "Finished" {
 		TXMemo = ""
+		NewTXStatus = "Finished"
 	}
 
 	for key, val := range queuedTX.TXIDs {
@@ -1199,7 +1254,7 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 		if val == TXID {
 			fmt.Printf("3.AQkey: %d\n", key)
 			fmt.Printf("4.AQval: %s\n", val)
-			queuedTX.Transactions[key].TXStatus = TXStatus
+			queuedTX.Transactions[key].TXStatus = NewTXStatus
 			queuedTX.Transactions[key].TXMemo = TXMemo
 			queuedTX.Transactions[key].UpdateTime = TimeNow
 			doflg1 = true
@@ -1207,7 +1262,7 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 		if val == MatchedTXID {
 			fmt.Printf("5.AQkey: %d\n", key)
 			fmt.Printf("6.AQval: %s\n", val)
-			queuedTX.Transactions[key].TXStatus = TXStatus
+			queuedTX.Transactions[key].TXStatus = NewTXStatus
 			queuedTX.Transactions[key].TXMemo = TXMemo
 			queuedTX.Transactions[key].UpdateTime = TimeNow
 			doflg2 = true
@@ -1241,20 +1296,38 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 	var doflg1, doflg2 bool
 	doflg1 = false
 	doflg2 = false
-	var TXMemo, TXErrMsg string
+	var NewTXStatus, TXMemo, TXErrMsg string
+	NewTXStatus = TXStatus
 	TXMemo = ""
 	TXErrMsg = ""
+
+	if TXStatus == "Waiting4Payment" {
+		TXMemo = "等待同資回應"
+		NewTXStatus = "Waiting4Payment"
+	}
 	if TXStatus == "PaymentError" {
 		TXMemo = "同資款不足"
+		NewTXStatus = "PaymentError"
 	}
-	if TXStatus == "Cancelled" {
+	if TXStatus == "Cancalled" {
+		TXMemo = "交易被取消"
+		NewTXStatus = "Cancalled"
+	}
+	if TXStatus == "Cancalled1" {
 		TXMemo = "取消交易"
+		NewTXStatus = "Cancalled"
+	}
+	if TXStatus == "Cancalled2" {
+		TXMemo = "同資系統錯誤"
+		NewTXStatus = "Cancalled"
 	}
 	if TXStatus == "Matched" {
 		TXMemo = ""
+		NewTXStatus = "Matched"
 	}
 	if TXStatus == "Finished" {
 		TXMemo = ""
+		NewTXStatus = "Finished"
 	}
 
 	for key, val := range historyTX.TXIDs {
@@ -1266,19 +1339,19 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 		if val == TXID {
 			fmt.Printf("9.AHkey: %d\n", key)
 			fmt.Printf("10.AHval: %s\n", val)
-			historyTX.Transactions[key].TXStatus = TXStatus
+			historyTX.Transactions[key].TXStatus = NewTXStatus
 			historyTX.Transactions[key].TXMemo = TXMemo
 			historyTX.Transactions[key].UpdateTime = TimeNow
-			historyTX.TXStatus[key] = TXStatus
+			historyTX.TXStatus[key] = NewTXStatus
 			doflg1 = true
 		}
 		if val == MatchedTXID {
 			fmt.Printf("11.AHkey: %d\n", key)
 			fmt.Printf("12.AHval: %s\n", val)
-			historyTX.Transactions[key].TXStatus = TXStatus
+			historyTX.Transactions[key].TXStatus = NewTXStatus
 			historyTX.Transactions[key].TXMemo = TXMemo
 			historyTX.Transactions[key].UpdateTime = TimeNow
-			historyTX.TXStatus[key] = TXStatus
+			historyTX.TXStatus[key] = NewTXStatus
 			doflg2 = true
 		}
 		if doflg1 == true && doflg2 == true {
@@ -1363,8 +1436,11 @@ func updateTransactionTXHcode(stub shim.ChaincodeStubInterface, TXID string, TXH
 
 	TimeNow := time.Now().Format(timelayout)
 	transaction, err := getTransactionStructFromID(stub, TXID)
+	if err != nil {
+		return err
+	}
 	transaction.TXHcode = TXHcode
-	transaction.TXStatus = "Cancelled"
+	transaction.TXStatus = "Cancalled"
 	transaction.TXMemo = "更正交易"
 	transaction.UpdateTime = TimeNow
 
@@ -1396,7 +1472,7 @@ func updateQueuedTransactionTXHcode(stub shim.ChaincodeStubInterface, TXKEY stri
 			fmt.Printf("3.Qkey: %d\n", key)
 			fmt.Printf("4.Qval: %s\n", val)
 			queuedTX.Transactions[key].TXHcode = TXHcode
-			queuedTX.Transactions[key].TXStatus = "Cancelled"
+			queuedTX.Transactions[key].TXStatus = "Cancalled"
 			queuedTX.Transactions[key].TXMemo = "更正交易"
 			queuedTX.Transactions[key].UpdateTime = TimeNow
 			doflg = true
@@ -1437,9 +1513,9 @@ func updateHistoryTransactionTXHcode(stub shim.ChaincodeStubInterface, HTXKEY st
 			fmt.Printf("3.Hkey: %d\n", key)
 			fmt.Printf("4.Hval: %s\n", val)
 			historyTX.Transactions[key].TXHcode = TXHcode
-			historyTX.Transactions[key].TXStatus = "Cancelled"
+			historyTX.Transactions[key].TXStatus = "Cancalled"
 			historyTX.Transactions[key].TXMemo = "更正交易"
-			historyTX.TXStatus[key] = "Cancelled"
+			historyTX.TXStatus[key] = "Cancalled"
 			historyTX.Transactions[key].UpdateTime = TimeNow
 			doflg = true
 			break
@@ -1472,6 +1548,7 @@ func (s *SmartContract) securityCorrectTransfer(
 		newTX.TXErrMsg = errMsg
 	}
 	TXIndex := newTX.TXIndex
+	TXSIndex := newTX.TXSIndex
 	TXID := newTX.TXID
 	TXType := newTX.TXType
 	SecurityID := newTX.SecurityID
@@ -1515,9 +1592,10 @@ func (s *SmartContract) securityCorrectTransfer(
 	if err == nil {
 		ApproveFlag = string(ValueAsBytes)
 	}
-	fmt.Printf("1.ApproveFlag=%s\n", ApproveFlag)
+	fmt.Printf("1.ApproveFlagCorrect=%s\n", ApproveFlag)
 
 	if isPutInQueue == true {
+		fmt.Printf("2.TXKEYCorrect=%s\n", TXKEY)
 
 		queueAsBytes, err := stub.GetState(TXKEY)
 		if err != nil {
@@ -1526,6 +1604,7 @@ func (s *SmartContract) securityCorrectTransfer(
 		}
 		queuedTx := QueuedTransaction{}
 		json.Unmarshal(queueAsBytes, &queuedTx)
+		fmt.Printf("3.HTXKEYCorrect=%s\n", HTXKEY)
 
 		historyAsBytes, err := stub.GetState(HTXKEY)
 		if err != nil {
@@ -1547,12 +1626,14 @@ func (s *SmartContract) securityCorrectTransfer(
 			queuedTx.TXKEY = TXKEY
 			queuedTx.Transactions = append(queuedTx.Transactions, newTX)
 			queuedTx.TXIndexs = append(queuedTx.TXIndexs, TXIndex)
+			queuedTx.TXSIndexs = append(queuedTx.TXSIndexs, TXSIndex)
 			queuedTx.TXIDs = append(queuedTx.TXIDs, TXID)
 			if historyAsBytes == nil {
 				historyNewTX.ObjectType = HistoryTXObjectType
 				historyNewTX.TXKEY = HTXKEY
 				historyNewTX.Transactions = append(historyNewTX.Transactions, newTX)
 				historyNewTX.TXIndexs = append(historyNewTX.TXIndexs, TXIndex)
+				historyNewTX.TXSIndexs = append(historyNewTX.TXSIndexs, TXSIndex)
 				historyNewTX.TXIDs = append(historyNewTX.TXIDs, TXID)
 				historyNewTX.TXStatus = append(historyNewTX.TXStatus, newTX.TXStatus)
 				historyNewTX.TXKinds = append(historyNewTX.TXKinds, TXKinds)
@@ -1567,7 +1648,8 @@ func (s *SmartContract) securityCorrectTransfer(
 					if queuedTx.Transactions[key].TXStatus == "Pending" {
 						fmt.Printf("qkey2: %d\n", key)
 						fmt.Printf("qval2: %s\n", val)
-						queuedTx.Transactions[key].TXStatus = "Cancelled"
+						queuedTx.Transactions[key].TXStatus = "Cancalled"
+						queuedTx.Transactions[key].TXMemo = "更正交易"
 						queuedTx.Transactions[key].TXHcode = TXID
 						queuedTx.Transactions[key].UpdateTime = TimeNow
 						doflg = true
@@ -1575,8 +1657,9 @@ func (s *SmartContract) securityCorrectTransfer(
 					if historyNewTX.Transactions[key].TXStatus == "Pending" {
 						fmt.Printf("hkey2: %d\n", key)
 						fmt.Printf("hval2: %s\n", val)
-						historyNewTX.TXStatus[key] = "Cancelled"
-						historyNewTX.Transactions[key].TXStatus = "Cancelled"
+						historyNewTX.TXStatus[key] = "Cancalled"
+						historyNewTX.Transactions[key].TXStatus = "Cancalled"
+						historyNewTX.Transactions[key].TXMemo = "更正交易"
 						historyNewTX.Transactions[key].TXHcode = TXID
 						historyNewTX.Transactions[key].UpdateTime = TimeNow
 						doflg = true
@@ -1668,6 +1751,9 @@ func (s *SmartContract) securityCorrectTransfer(
 									historyNewTX.Transactions[key].TXStatus = "Finished"
 									historyNewTX.TXStatus[key] = "Finished"
 									newTX.TXStatus = "Finished"
+									queuedTx.Transactions[key].TXMemo = ""
+									historyNewTX.Transactions[key].TXMemo = ""
+									newTX.TXMemo = ""
 									err := updateTransactionStatus(stub, val.TXID, "Finished", TXID)
 									if err != nil {
 										//return shim.Error(err.Error())
@@ -1678,6 +1764,9 @@ func (s *SmartContract) securityCorrectTransfer(
 									historyNewTX.Transactions[key].TXStatus = "Waiting4Payment"
 									historyNewTX.TXStatus[key] = "Waiting4Payment"
 									newTX.TXStatus = "Waiting4Payment"
+									queuedTx.Transactions[key].TXMemo = "等待同資回應"
+									historyNewTX.Transactions[key].TXMemo = "等待同資回應"
+									newTX.TXMemo = "等待同資回應"
 									err := updateTransactionStatus(stub, val.TXID, "Waiting4Payment", TXID)
 									if err != nil {
 										//return shim.Error(err.Error())
@@ -1689,6 +1778,9 @@ func (s *SmartContract) securityCorrectTransfer(
 								historyNewTX.Transactions[key].TXStatus = "Finished"
 								historyNewTX.TXStatus[key] = "Finished"
 								newTX.TXStatus = "Finished"
+								queuedTx.Transactions[key].TXMemo = ""
+								historyNewTX.Transactions[key].TXMemo = ""
+								newTX.TXMemo = ""
 								err := updateTransactionStatus(stub, val.TXID, "Finished", TXID)
 								if err != nil {
 									//return shim.Error(err.Error())
@@ -1700,6 +1792,9 @@ func (s *SmartContract) securityCorrectTransfer(
 							historyNewTX.Transactions[key].TXStatus = "Finished"
 							historyNewTX.TXStatus[key] = "Finished"
 							newTX.TXStatus = "Finished"
+							queuedTx.Transactions[key].TXMemo = ""
+							historyNewTX.Transactions[key].TXMemo = ""
+							newTX.TXMemo = ""
 							err := updateTransactionStatus(stub, val.TXID, "Finished", TXID)
 							if err != nil {
 								//return shim.Error(err.Error())
@@ -1710,6 +1805,33 @@ func (s *SmartContract) securityCorrectTransfer(
 						doflg = true
 						break
 					}
+				} else {
+					fmt.Println("1.TXSIndex= " + TXSIndex + "\n")
+					if val.TXSIndex == TXSIndex && val.TXStatus == TXStatus && val.TXIndex != TXIndex && val.TXFrom != TXFrom && val.TXType != TXType && val.TXID != TXID {
+						if TXStatus == "Pending" && val.TXStatus == "Pending" {
+							if SecurityAmount != val.SecurityAmount {
+								newTX.MatchedTXID = val.TXID
+								queuedTx.Transactions[key].MatchedTXID = TXID
+								historyNewTX.Transactions[key].MatchedTXID = TXID
+								newTX.TXMemo = "交易金額疑似有誤"
+								queuedTx.Transactions[key].TXMemo = "交易金額疑似有誤"
+								historyNewTX.Transactions[key].TXMemo = "交易金額疑似有誤"
+								newTX.TXErrMsg = "SecurityAmount != val.SecurityAmount"
+								queuedTx.Transactions[key].TXErrMsg = "SecurityAmount != val.SecurityAmount"
+								historyNewTX.Transactions[key].TXErrMsg = "SecurityAmount != val.SecurityAmount"
+							} else if Payment != val.Payment {
+								newTX.MatchedTXID = val.TXID
+								queuedTx.Transactions[key].MatchedTXID = TXID
+								historyNewTX.Transactions[key].MatchedTXID = TXID
+								newTX.TXMemo = "交易面額疑似有誤"
+								queuedTx.Transactions[key].TXMemo = "交易面額疑似有誤"
+								historyNewTX.Transactions[key].TXMemo = "交易面額疑似有誤"
+								newTX.TXErrMsg = "Payment != val.Payment"
+								queuedTx.Transactions[key].TXErrMsg = "Payment != val.Payment"
+								historyNewTX.Transactions[key].TXErrMsg = "Payment != val.Payment"
+							}
+						}
+					}
 				}
 			}
 		}
@@ -1719,12 +1841,14 @@ func (s *SmartContract) securityCorrectTransfer(
 				queuedTx.TXKEY = TXKEY
 				queuedTx.Transactions = append(queuedTx.Transactions, newTX)
 				queuedTx.TXIndexs = append(queuedTx.TXIndexs, TXIndex)
+				queuedTx.TXSIndexs = append(queuedTx.TXSIndexs, TXSIndex)
 				queuedTx.TXIDs = append(queuedTx.TXIDs, TXID)
 
 				historyNewTX.ObjectType = HistoryTXObjectType
 				historyNewTX.TXKEY = HTXKEY
 				historyNewTX.Transactions = append(historyNewTX.Transactions, newTX)
 				historyNewTX.TXIndexs = append(historyNewTX.TXIndexs, TXIndex)
+				historyNewTX.TXSIndexs = append(historyNewTX.TXSIndexs, TXSIndex)
 				historyNewTX.TXIDs = append(historyNewTX.TXIDs, TXID)
 				historyNewTX.TXStatus = append(historyNewTX.TXStatus, newTX.TXStatus)
 				historyNewTX.TXKinds = append(historyNewTX.TXKinds, TXKinds)
@@ -1805,6 +1929,9 @@ func validateCorrectTransaction(
 	if sourceTX.TXStatus != "Pending" {
 		return transaction, false, "Failed to find Transaction Pending TXStatus."
 	}
+	if sourceTX.TXStatus == "Cancalled" {
+		return transaction, false, "TXStatus of transaction was Cancalled. TXHcode:" + sourceTX.TXHcode
+	}
 
 	TXType := args[0]
 	if (TXType != "B") && (TXType != "S") {
@@ -1824,7 +1951,10 @@ func validateCorrectTransaction(
 	if TXFrom == TXTo {
 		return transaction, false, "TXFrom equal to TXTo."
 	}
-
+	BankFromID := "BANK" + SubString(TXFrom, 0, 3)
+	if verifyIdentity(stub, BankFromID) != "" {
+		return transaction, false, "BankFromID does not exits in the BankList."
+	}
 	SecurityID := strings.ToUpper(args[3])
 	_, err = getSecurityStructFromID(stub, SecurityID)
 	if err != nil {
@@ -1904,13 +2034,13 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 	TXStatus := transaction.TXStatus
 	TXMemo := ""
 	if TXStatus == "Waiting4Payment" {
-		TXMemo = "同資回報系統錯誤"
+		TXMemo = "日終交易被取消"
 	}
 	if TXStatus == "Pending" {
-		TXMemo = "日終尚未比對取消"
+		TXMemo = "尚未比對日終取消"
 	}
 
-	transaction.TXStatus = "Cancelled"
+	transaction.TXStatus = "Cancalled"
 	transaction.TXMemo = TXMemo
 	transaction.UpdateTime = TimeNow
 	transactionAsBytes, err := json.Marshal(transaction)
@@ -1923,10 +2053,10 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 	}
 	if TXStatus == "Waiting4Payment" {
 		MatchedTXID = transaction.MatchedTXID
-		TXMemo = "同資回報系統錯誤"
+		TXMemo = "日終交易被取消"
 		transaction2, _ := getTransactionStructFromID(stub, MatchedTXID)
 		if transaction2 != nil {
-			transaction2.TXStatus = "Cancelled"
+			transaction2.TXStatus = "Cancalled"
 			transaction2.TXMemo = TXMemo
 			transaction2.UpdateTime = TimeNow
 			transaction2AsBytes, err := json.Marshal(transaction2)
@@ -2003,10 +2133,10 @@ func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY
 		TXStatus := queuedTX.Transactions[key].TXStatus
 		TXMemo := ""
 		if TXStatus == "Waiting4Payment" {
-			TXMemo = "同資回報系統錯誤"
+			TXMemo = "日終交易被取消"
 		}
 		if TXStatus == "Pending" {
-			TXMemo = "日終尚未比對取消"
+			TXMemo = "尚未比對日終取消"
 		}
 
 		if val == TXID {
@@ -2014,7 +2144,7 @@ func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY
 			fmt.Printf("qval2: %s\n", val)
 
 			if (queuedTX.Transactions[key].TXStatus == "Pending") || (queuedTX.Transactions[key].TXStatus == "Waiting4Payment") {
-				queuedTX.Transactions[key].TXStatus = "Cancelled"
+				queuedTX.Transactions[key].TXStatus = "Cancalled"
 				queuedTX.Transactions[key].TXMemo = TXMemo
 				queuedTX.Transactions[key].UpdateTime = TimeNow
 				doflg = true
@@ -2025,7 +2155,7 @@ func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY
 			fmt.Printf("qval3: %s\n", val)
 
 			if (queuedTX.Transactions[key].TXStatus == "Pending") || (queuedTX.Transactions[key].TXStatus == "Waiting4Payment") {
-				queuedTX.Transactions[key].TXStatus = "Cancelled"
+				queuedTX.Transactions[key].TXStatus = "Cancalled"
 				queuedTX.Transactions[key].TXMemo = TXMemo
 				queuedTX.Transactions[key].UpdateTime = TimeNow
 				doflg = true
@@ -2065,20 +2195,20 @@ func updateEndDayHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXK
 		TXStatus := historyTX.Transactions[key].TXStatus
 		TXMemo := ""
 		if TXStatus == "Waiting4Payment" {
-			TXMemo = "同資回報系統錯誤"
+			TXMemo = "日終交易被取消"
 		}
 		if TXStatus == "Pending" {
-			TXMemo = "日終尚未比對取消"
+			TXMemo = "尚未比對日終取消"
 		}
 
 		if val == TXID {
 			fmt.Printf("hkey2: %d\n", key)
 			fmt.Printf("hval2: %s\n", val)
 			if historyTX.Transactions[key].TXStatus == "Pending" || historyTX.Transactions[key].TXStatus == "Waiting4Payment" {
-				historyTX.Transactions[key].TXStatus = "Cancelled"
+				historyTX.Transactions[key].TXStatus = "Cancalled"
 				historyTX.Transactions[key].TXMemo = TXMemo
 				historyTX.Transactions[key].UpdateTime = TimeNow
-				historyTX.TXStatus[key] = "Cancelled"
+				historyTX.TXStatus[key] = "Cancalled"
 				doflg = true
 			}
 		}
@@ -2086,10 +2216,10 @@ func updateEndDayHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXK
 			fmt.Printf("hkey3: %d\n", key)
 			fmt.Printf("hval3: %s\n", val)
 			if historyTX.Transactions[key].TXStatus == "Pending" || historyTX.Transactions[key].TXStatus == "Waiting4Payment" {
-				historyTX.Transactions[key].TXStatus = "Cancelled"
+				historyTX.Transactions[key].TXStatus = "Cancalled"
 				historyTX.Transactions[key].TXMemo = TXMemo
 				historyTX.Transactions[key].UpdateTime = TimeNow
-				historyTX.TXStatus[key] = "Cancelled"
+				historyTX.TXStatus[key] = "Cancalled"
 				doflg = true
 			}
 		}
@@ -2696,7 +2826,9 @@ func (s *SmartContract) queryQueuedTransactionStatus(APIstub shim.ChaincodeStubI
 		}
 	}
 	if doflg != true {
-		return shim.Error("Failed to find QueuedTransaction ")
+		//return shim.Error("Failed to find QueuedTransaction ")
+		buffer.WriteString(", \"Value\":")
+		buffer.WriteString("Failed to find QueuedTransaction")
 	}
 	buffer.WriteString("}")
 	buffer.WriteString("]")
@@ -2773,7 +2905,9 @@ func (s *SmartContract) queryHistoryTransactionStatus(APIstub shim.ChaincodeStub
 		}
 	}
 	if doflg != true {
-		return shim.Error("Failed to find TransactionHistory ")
+		//return shim.Error("Failed to find TransactionHistory ")
+		buffer.WriteString(", \"Value\":")
+		buffer.WriteString("Failed to find HistoryTransaction")
 	}
 	buffer.WriteString("}")
 	buffer.WriteString("]")
