@@ -2784,7 +2784,7 @@ func (s *SmartContract) queryQueuedTransactionStatus(APIstub shim.ChaincodeStubI
 	buffer.WriteString(",\"Transactions\":[")
 	bArrayMemberAlreadyWritten := false
 	for key, val := range QueuedTX.Transactions {
-		if val.TXStatus == TXStatus {
+		if val.TXStatus == TXStatus || TXStatus == "ALL" {
 			// Add a comma before array members, suppress it for the first array member
 			if bArrayMemberAlreadyWritten == true {
 				buffer.WriteString(",")
@@ -2906,7 +2906,7 @@ func (s *SmartContract) queryHistoryTransactionStatus(APIstub shim.ChaincodeStub
 	buffer.WriteString(",\"Transactions\":[")
 	bArrayMemberAlreadyWritten := false
 	for key, val := range HistoryTX.TXStatus {
-		if val == TXStatus {
+		if val == TXStatus || TXStatus == "ALL" {
 			if bArrayMemberAlreadyWritten == true {
 				buffer.WriteString(",")
 			}
