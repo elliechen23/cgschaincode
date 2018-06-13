@@ -647,12 +647,17 @@ func (s *SmartContract) queryAssetInfo(APIstub shim.ChaincodeStubInterface, args
 	buffer.WriteString("\"")
 	buffer.WriteString(Account.AccountID)
 	buffer.WriteString("\"")
-
+	buffer.WriteString(",\"Records\":[")
+	bArrayMemberAlreadyWritten := false
 	for key, val := range Account.Assets {
 		if val.SecurityID == args[1] {
-			buffer.WriteString(", \"AssetKey\":")
+			// Add a comma before array members, suppress it for the first array member
+			if bArrayMemberAlreadyWritten == true {
+				buffer.WriteString(",")
+			}
+			buffer.WriteString("{\"AssetKey\":")
 			buffer.WriteString("\"")
-			buffer.WriteString(strconv.Itoa(key))
+			buffer.WriteString(strconv.Itoa(key + 1))
 			buffer.WriteString("\"")
 			buffer.WriteString(", \"SecurityID\":")
 			buffer.WriteString("\"")
@@ -670,11 +675,16 @@ func (s *SmartContract) queryAssetInfo(APIstub shim.ChaincodeStubInterface, args
 			buffer.WriteString("\"")
 			buffer.WriteString(strconv.FormatInt(val.Position, 10))
 			buffer.WriteString("\"")
+			buffer.WriteString("}")
+			bArrayMemberAlreadyWritten = true
 			doflg = true
 		}
 	}
+	buffer.WriteString("]")
 	if doflg != true {
-		return shim.Error("Failed to find SecurityID ")
+		//return shim.Error("Failed to find SecurityID ")
+		buffer.WriteString(", \"Value\":")
+		buffer.WriteString("Failed to find SecurityID")
 	}
 	buffer.WriteString("}")
 	buffer.WriteString("]")

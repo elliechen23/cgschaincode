@@ -1018,12 +1018,17 @@ func (s *SmartContract) queryOwnerAccount(APIstub shim.ChaincodeStubInterface, a
 	buffer.WriteString("\"")
 	buffer.WriteString(Security.SecurityID)
 	buffer.WriteString("\"")
-
+	buffer.WriteString(",\"Records\":[")
+	bArrayMemberAlreadyWritten := false
 	for key, val := range Security.Owners {
 		if val.OwnedAccountID == args[1] {
+			// Add a comma before array members, suppress it for the first array member
+			if bArrayMemberAlreadyWritten == true {
+				buffer.WriteString(",")
+			}
 			buffer.WriteString(", \"OwnedKey\":")
 			buffer.WriteString("\"")
-			buffer.WriteString(strconv.Itoa(key))
+			buffer.WriteString(strconv.Itoa(key + 1))
 			buffer.WriteString("\"")
 			buffer.WriteString(", \"OwnedAccountID\":")
 			buffer.WriteString("\"")
@@ -1053,11 +1058,16 @@ func (s *SmartContract) queryOwnerAccount(APIstub shim.ChaincodeStubInterface, a
 			buffer.WriteString("\"")
 			buffer.WriteString(strconv.Itoa(val.Avaliable))
 			buffer.WriteString("\"")
+			buffer.WriteString("}")
+			bArrayMemberAlreadyWritten = true
 			doflg = true
 		}
 	}
+	buffer.WriteString("]")
 	if doflg != true {
-		return shim.Error("Failed to find ownedAccountID ")
+		//return shim.Error("Failed to find ownedAccountID ")
+		buffer.WriteString(", \"Value\":")
+		buffer.WriteString("Failed to find ownedAccountID")
 	}
 	buffer.WriteString("}")
 	buffer.WriteString("]")
@@ -1409,12 +1419,17 @@ func (s *SmartContract) queryBankSecurityTotals(APIstub shim.ChaincodeStubInterf
 	buffer.WriteString("\"")
 	buffer.WriteString(Security.SecurityID)
 	buffer.WriteString("\"")
-
+	buffer.WriteString(",\"Records\":[")
+	bArrayMemberAlreadyWritten := false
 	for key, val := range Security.SecurityTotals {
 		if val.BankID == args[1] {
-			buffer.WriteString(", \"SecurityTotalsKey\":")
+			// Add a comma before array members, suppress it for the first array member
+			if bArrayMemberAlreadyWritten == true {
+				buffer.WriteString(",")
+			}
+			buffer.WriteString("{\"SecurityTotalsKey\":")
 			buffer.WriteString("\"")
-			buffer.WriteString(strconv.Itoa(key))
+			buffer.WriteString(strconv.Itoa(key + 1))
 			buffer.WriteString("\"")
 			buffer.WriteString(", \"BankID\":")
 			buffer.WriteString("\"")
@@ -1444,11 +1459,16 @@ func (s *SmartContract) queryBankSecurityTotals(APIstub shim.ChaincodeStubInterf
 			buffer.WriteString("\"")
 			buffer.WriteString(val.UpdateTime)
 			buffer.WriteString("\"")
+			buffer.WriteString("}")
+			bArrayMemberAlreadyWritten = true
 			doflg = true
 		}
 	}
+	buffer.WriteString("]")
 	if doflg != true {
-		return shim.Error("Failed to find SecurityTotals ")
+		//return shim.Error("Failed to find SecurityTotals ")
+		buffer.WriteString(", \"Value\":")
+		buffer.WriteString("Failed to find SecurityTotals")
 	}
 	buffer.WriteString("}")
 	buffer.WriteString("]")

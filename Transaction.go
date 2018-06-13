@@ -2781,7 +2781,7 @@ func (s *SmartContract) queryQueuedTransactionStatus(APIstub shim.ChaincodeStubI
 	buffer.WriteString("\"")
 	buffer.WriteString(QueuedTX.TXKEY)
 	buffer.WriteString("\"")
-	buffer.WriteString("\",Transactions\":[")
+	buffer.WriteString(",\"Transactions\":[")
 	bArrayMemberAlreadyWritten := false
 	for key, val := range QueuedTX.Transactions {
 		if val.TXStatus == TXStatus {
@@ -2791,7 +2791,7 @@ func (s *SmartContract) queryQueuedTransactionStatus(APIstub shim.ChaincodeStubI
 			}
 			buffer.WriteString("{\"QueuedKey\":")
 			buffer.WriteString("\"")
-			buffer.WriteString(strconv.Itoa(key))
+			buffer.WriteString(strconv.Itoa(key + 1))
 			buffer.WriteString("\"")
 			buffer.WriteString(", \"TXID\":")
 			buffer.WriteString("\"")
@@ -2903,7 +2903,7 @@ func (s *SmartContract) queryHistoryTransactionStatus(APIstub shim.ChaincodeStub
 	buffer.WriteString("\"")
 	buffer.WriteString(HistoryTX.TXKEY)
 	buffer.WriteString("\"")
-	buffer.WriteString("\",Transactions\":[")
+	buffer.WriteString(",\"Transactions\":[")
 	bArrayMemberAlreadyWritten := false
 	for key, val := range HistoryTX.TXStatus {
 		if val == TXStatus {
@@ -2912,7 +2912,7 @@ func (s *SmartContract) queryHistoryTransactionStatus(APIstub shim.ChaincodeStub
 			}
 			buffer.WriteString("{\"HistoryKey\":")
 			buffer.WriteString("\"")
-			buffer.WriteString(strconv.Itoa(key))
+			buffer.WriteString(strconv.Itoa(key + 1))
 			buffer.WriteString("\"")
 			buffer.WriteString(", \"TXID\":")
 			buffer.WriteString("\"")
