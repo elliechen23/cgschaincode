@@ -617,7 +617,9 @@ func (s *SmartContract) queryAssetLength(APIstub shim.ChaincodeStubInterface, ar
 	buffer.WriteString(Account.AccountID)
 	buffer.WriteString("\"")
 	buffer.WriteString(", \"OwnersLength\":")
+	buffer.WriteString("\"")
 	buffer.WriteString(strconv.Itoa(len(Account.Assets)))
+	buffer.WriteString("\"")
 	buffer.WriteString("}")
 	buffer.WriteString("]")
 	fmt.Printf("%s", buffer.String())
@@ -649,15 +651,25 @@ func (s *SmartContract) queryAssetInfo(APIstub shim.ChaincodeStubInterface, args
 	for key, val := range Account.Assets {
 		if val.SecurityID == args[1] {
 			buffer.WriteString(", \"AssetKey\":")
+			buffer.WriteString("\"")
 			buffer.WriteString(strconv.Itoa(key))
+			buffer.WriteString("\"")
 			buffer.WriteString(", \"SecurityID\":")
+			buffer.WriteString("\"")
 			buffer.WriteString(val.SecurityID)
+			buffer.WriteString("\"")
 			buffer.WriteString(", \"SecurityAmount\":")
+			buffer.WriteString("\"")
 			buffer.WriteString(strconv.FormatInt(val.SecurityAmount, 10))
+			buffer.WriteString("\"")
 			buffer.WriteString(", \"Balance\":")
+			buffer.WriteString("\"")
 			buffer.WriteString(strconv.FormatInt(val.Balance, 10))
+			buffer.WriteString("\"")
 			buffer.WriteString(", \"Position\":")
+			buffer.WriteString("\"")
 			buffer.WriteString(strconv.FormatInt(val.Position, 10))
+			buffer.WriteString("\"")
 			doflg = true
 		}
 	}
