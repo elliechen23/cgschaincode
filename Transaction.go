@@ -602,7 +602,7 @@ func validateTransaction(
 	transaction := Transaction{}
 	transaction.ObjectType = TransactionObjectType
 	transaction.TXStatus = "Canceled"
-	transaction.TXMemo = "尚未完成比對"
+	transaction.TXMemo = "尚未比對"
 	transaction.TXErrMsg = ""
 	transaction.TXHcode = ""
 	transaction.IsFrozen = false
@@ -1087,12 +1087,12 @@ func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXSt
 		transaction.TXStatus = "PaymentError"
 	}
 	if TXStatus == "Cancalled" {
-		TXMemo = "交易被取消"
+		TXMemo = "交易取消"
 		transaction.TXMemo = TXMemo
 		transaction.TXStatus = "Cancalled"
 	}
 	if TXStatus == "Cancalled1" {
-		TXMemo = "取消交易"
+		TXMemo = "交易取消"
 		transaction.TXMemo = TXMemo
 		transaction.TXStatus = "Cancalled"
 	}
@@ -1225,11 +1225,11 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 		NewTXStatus = "PaymentError"
 	}
 	if TXStatus == "Cancalled" {
-		TXMemo = "交易被取消"
+		TXMemo = "交易取消"
 		NewTXStatus = "Cancalled"
 	}
 	if TXStatus == "Cancalled1" {
-		TXMemo = "取消交易"
+		TXMemo = "交易取消"
 		NewTXStatus = "Cancalled"
 	}
 	if TXStatus == "Cancalled2" {
@@ -1310,11 +1310,11 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 		NewTXStatus = "PaymentError"
 	}
 	if TXStatus == "Cancalled" {
-		TXMemo = "交易被取消"
+		TXMemo = "交易取消"
 		NewTXStatus = "Cancalled"
 	}
 	if TXStatus == "Cancalled1" {
-		TXMemo = "取消交易"
+		TXMemo = "交易取消"
 		NewTXStatus = "Cancalled"
 	}
 	if TXStatus == "Cancalled2" {
@@ -1441,7 +1441,7 @@ func updateTransactionTXHcode(stub shim.ChaincodeStubInterface, TXID string, TXH
 	}
 	transaction.TXHcode = TXHcode
 	transaction.TXStatus = "Cancalled"
-	transaction.TXMemo = "更正交易"
+	transaction.TXMemo = "交易更正"
 	transaction.UpdateTime = TimeNow
 
 	transactionAsBytes, err := json.Marshal(transaction)
@@ -1473,7 +1473,7 @@ func updateQueuedTransactionTXHcode(stub shim.ChaincodeStubInterface, TXKEY stri
 			fmt.Printf("4.Qval: %s\n", val)
 			queuedTX.Transactions[key].TXHcode = TXHcode
 			queuedTX.Transactions[key].TXStatus = "Cancalled"
-			queuedTX.Transactions[key].TXMemo = "更正交易"
+			queuedTX.Transactions[key].TXMemo = "交易更正"
 			queuedTX.Transactions[key].UpdateTime = TimeNow
 			doflg = true
 			break
@@ -1514,7 +1514,7 @@ func updateHistoryTransactionTXHcode(stub shim.ChaincodeStubInterface, HTXKEY st
 			fmt.Printf("4.Hval: %s\n", val)
 			historyTX.Transactions[key].TXHcode = TXHcode
 			historyTX.Transactions[key].TXStatus = "Cancalled"
-			historyTX.Transactions[key].TXMemo = "更正交易"
+			historyTX.Transactions[key].TXMemo = "交易更正"
 			historyTX.TXStatus[key] = "Cancalled"
 			historyTX.Transactions[key].UpdateTime = TimeNow
 			doflg = true
@@ -1649,7 +1649,7 @@ func (s *SmartContract) securityCorrectTransfer(
 						fmt.Printf("qkey2: %d\n", key)
 						fmt.Printf("qval2: %s\n", val)
 						queuedTx.Transactions[key].TXStatus = "Cancalled"
-						queuedTx.Transactions[key].TXMemo = "更正交易"
+						queuedTx.Transactions[key].TXMemo = "交易更正"
 						queuedTx.Transactions[key].TXHcode = TXID
 						queuedTx.Transactions[key].UpdateTime = TimeNow
 						doflg = true
@@ -1659,7 +1659,7 @@ func (s *SmartContract) securityCorrectTransfer(
 						fmt.Printf("hval2: %s\n", val)
 						historyNewTX.TXStatus[key] = "Cancalled"
 						historyNewTX.Transactions[key].TXStatus = "Cancalled"
-						historyNewTX.Transactions[key].TXMemo = "更正交易"
+						historyNewTX.Transactions[key].TXMemo = "交易更正"
 						historyNewTX.Transactions[key].TXHcode = TXID
 						historyNewTX.Transactions[key].UpdateTime = TimeNow
 						doflg = true
@@ -1888,7 +1888,7 @@ func validateCorrectTransaction(
 	transaction := Transaction{}
 	transaction.ObjectType = TransactionObjectType
 	transaction.TXStatus = "Canceled"
-	transaction.TXMemo = "更正交易"
+	transaction.TXMemo = "交易更正"
 	transaction.TXErrMsg = ""
 	transaction.TXHcode = ""
 	transaction.IsFrozen = false
@@ -2034,10 +2034,10 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 	TXStatus := transaction.TXStatus
 	TXMemo := ""
 	if TXStatus == "Waiting4Payment" {
-		TXMemo = "日終交易被取消"
+		TXMemo = "日終交易取消"
 	}
 	if TXStatus == "Pending" {
-		TXMemo = "尚未比對日終取消"
+		TXMemo = "尚未比對"
 	}
 
 	transaction.TXStatus = "Cancalled"
@@ -2053,7 +2053,7 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 	}
 	if TXStatus == "Waiting4Payment" {
 		MatchedTXID = transaction.MatchedTXID
-		TXMemo = "日終交易被取消"
+		TXMemo = "日終交易取消"
 		transaction2, _ := getTransactionStructFromID(stub, MatchedTXID)
 		if transaction2 != nil {
 			transaction2.TXStatus = "Cancalled"
@@ -2133,10 +2133,10 @@ func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY
 		TXStatus := queuedTX.Transactions[key].TXStatus
 		TXMemo := ""
 		if TXStatus == "Waiting4Payment" {
-			TXMemo = "日終交易被取消"
+			TXMemo = "日終交易取消"
 		}
 		if TXStatus == "Pending" {
-			TXMemo = "尚未比對日終取消"
+			TXMemo = "尚未比對"
 		}
 
 		if val == TXID {
@@ -2195,10 +2195,10 @@ func updateEndDayHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXK
 		TXStatus := historyTX.Transactions[key].TXStatus
 		TXMemo := ""
 		if TXStatus == "Waiting4Payment" {
-			TXMemo = "日終交易被取消"
+			TXMemo = "日終交易取消"
 		}
 		if TXStatus == "Pending" {
-			TXMemo = "尚未比對日終取消"
+			TXMemo = "尚未比對"
 		}
 
 		if val == TXID {
@@ -2784,7 +2784,7 @@ func (s *SmartContract) queryQueuedTransactionStatus(APIstub shim.ChaincodeStubI
 	buffer.WriteString(",\"Transactions\":[")
 	bArrayMemberAlreadyWritten := false
 	for key, val := range QueuedTX.Transactions {
-		if val.TXStatus == TXStatus || TXStatus == "ALL" {
+		if val.TXStatus == TXStatus || TXStatus == "All" {
 			// Add a comma before array members, suppress it for the first array member
 			if bArrayMemberAlreadyWritten == true {
 				buffer.WriteString(",")
@@ -2906,7 +2906,7 @@ func (s *SmartContract) queryHistoryTransactionStatus(APIstub shim.ChaincodeStub
 	buffer.WriteString(",\"Transactions\":[")
 	bArrayMemberAlreadyWritten := false
 	for key, val := range HistoryTX.TXStatus {
-		if val == TXStatus || TXStatus == "ALL" {
+		if val == TXStatus || TXStatus == "All" {
 			if bArrayMemberAlreadyWritten == true {
 				buffer.WriteString(",")
 			}
