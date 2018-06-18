@@ -49,6 +49,7 @@ Navigate to the chaincode-docker-devmode directory of the fabric-samples clone:
 1. queryAllSecurityKeys(APIstub, args)
 1. changeBankSecurityTotals(APIstub, args)
 1. queryBankSecurityTotals(APIstub, args)
+1. querySecurityTotals(APIstub, args)
 
 
 ### Account Chaincode Functions
@@ -80,6 +81,7 @@ Navigate to the chaincode-docker-devmode directory of the fabric-samples clone:
 1. getHistoryForBank(APIstub, args)
 1. getHistoryTXIDForBank(APIstub, args)
 1. queryAllBankKeys(APIstub, args)
+1. queryBankTotals(APIstub, args)
 
 
 ### Transaction Chaincode Functions

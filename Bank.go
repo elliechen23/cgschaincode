@@ -17,20 +17,20 @@ const BankObjectType string = "Bank"
 const AdminBankID string = "CBC"
 
 type Bank struct {
-	ObjectType   string      `json:"docType"`  // default set to "Bank"
-	BankID       string      `json:"BankID"`   // BANK002,BANK004,BANKCBC
-	BankName     string      `json:"BankName"` // BANK 002, BANK 004, BANK CBC
-	BankCode     string      `json:"BankCode"` // BankCode (002,004,999)
-	BankTotals   []BankTotal `json:"BankTotals"`
-	BankAccounts []string    `json:"BankAccounts"`
+	ObjectType   string      `json:"docType"`      // default set to "Bank"
+	BankID       string      `json:"BankID"`       // BANK002,BANK004,BANK005,BANKCBC
+	BankName     string      `json:"BankName"`     // BANK 002, BANK 004,BANK 005, BANK CBC
+	BankCode     string      `json:"BankCode"`     // BankCode (002,004,005,999)
+	BankTotals   []BankTotal `json:"BankTotals"`   //清算銀行總計數
+	BankAccounts []string    `json:"BankAccounts"` //清算銀行下客戶帳號
 }
 
 type BankTotal struct {
-	SecurityID   string `json:"SecurityID"`
-	TotalBalance int64  `json:"TotalBalance"`
-	//TotalInterest int64  `json:"TotalInterest"`
-	CreateTime string `json:"CreateTime"`
-	UpdateTime string `json:"UpdateTime"`
+	SecurityID   string `json:"SecurityID"`   //公債代號
+	TotalBalance int64  `json:"TotalBalance"` //總券數
+	TotalAmount  int64  `json:"TotalAmount"`  //總款數
+	CreateTime   string `json:"CreateTime"`
+	UpdateTime   string `json:"UpdateTime"`
 }
 
 /*
@@ -485,9 +485,9 @@ func getBankStructFromID(
 	return bank, nil
 }
 
-func updateBankTotals(stub shim.ChaincodeStubInterface, BankID string, SecurityID string, Amount int64, isNegative bool) error {
-	fmt.Printf("updateBankTotals: BankID=%s,SecurityID=%s,Amount=%d\n", BankID, SecurityID, Amount)
-	TimeNow := time.Now().Format(timelayout)
+func updateBankTotals(stub shim.ChaincodeStubInterface, BankID string, SecurityID string, AccountID string, Balance int64, Amount int64, isNegative bool) error {
+	fmt.Printf("updateBankTotals: BankID=%s,SecurityID=%s,AccountID=%s,Balance=%d,Amount=%d\n", BankID, SecurityID, AccountID, Balance, Amount)
+	TimeNow2 := time.Now().Format(timelayout2)
 	newbankid := "BANK" + SubString(BankID, 0, 3)
 	bank, err := getBankStructFromID(stub, newbankid)
 	fmt.Printf("new BankID=%s\n", newbankid)
@@ -505,25 +505,40 @@ func updateBankTotals(stub shim.ChaincodeStubInterface, BankID string, SecurityI
 			fmt.Printf("3.Bkey: %d\n", key)
 			fmt.Printf("4.Bval: %s\n", val)
 			if isNegative != true {
-				bank.BankTotals[key].TotalBalance += Amount
-				//bank.BankTotals[key].TotalInterest += Interest
+				bank.BankTotals[key].TotalBalance += Balance
+				bank.BankTotals[key].TotalAmount += Amount
 			} else if isNegative == true {
-				bank.BankTotals[key].TotalBalance -= Amount
-				//bank.BankTotals[key].TotalInterest -= Interest
+				bank.BankTotals[key].TotalBalance -= Balance
+				bank.BankTotals[key].TotalAmount -= Amount
 			}
 
-			bank.BankTotals[key].UpdateTime = TimeNow
+			bank.BankTotals[key].UpdateTime = TimeNow2
 			doflg = true
 			break
 		}
 	}
 	if doflg != true {
 		bankTotal.SecurityID = SecurityID
-		bankTotal.TotalBalance = Amount
-		//bankTotal.TotalInterest = Interest
-		bankTotal.CreateTime = TimeNow
-		bankTotal.UpdateTime = TimeNow
+		bankTotal.TotalBalance = Balance
+		bankTotal.TotalAmount = Amount
+		bankTotal.CreateTime = TimeNow2
+		bankTotal.UpdateTime = TimeNow2
 		bank.BankTotals = append(bank.BankTotals, bankTotal)
+	}
+	doflg = false
+	for key, val := range bank.BankAccounts {
+		fmt.Printf("akey1: %d\n", key)
+		fmt.Printf("aval1: %s\n", val)
+
+		if val == AccountID {
+			fmt.Printf("akey2: %d\n", key)
+			fmt.Printf("aval2: %s\n", val)
+			doflg = true
+			break
+		}
+	}
+	if doflg != true {
+		bank.BankAccounts = append(bank.BankAccounts, AccountID)
 	}
 
 	bankAsBytes, err := json.Marshal(bank)
@@ -574,4 +589,23 @@ func updateBankAccounts(stub shim.ChaincodeStubInterface, BankID string, Account
 		return err
 	}
 	return nil
+}
+
+//peer chaincode query -n mycc -c '{"Args":["BankTotals","BANK002"]}' -C myc
+func (s *SmartContract) queryBankTotals(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
+
+	if len(args) != 1 {
+		return shim.Error("Incorrect number of arguments. Expecting 1")
+	}
+
+	BankAsBytes, _ := APIstub.GetState(args[0])
+	Bank := Bank{}
+	json.Unmarshal(BankAsBytes, &Bank)
+
+	BankTotalsAsBytes, err := json.Marshal(Bank.BankTotals)
+	if err != nil {
+		return shim.Error("Failed to query BankTotals state")
+	}
+
+	return shim.Success(BankTotalsAsBytes)
 }

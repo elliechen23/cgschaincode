@@ -16,20 +16,21 @@ import (
 const accountObjectType string = "account"
 
 type Asset struct {
-	SecurityID     string `json:"SecurityID"`
-	SecurityAmount int64  `json:"SecurityAmount"`
-	Balance        int64  `json:"Balance"`
-	Position       int64  `json:"Position"`
+	SecurityID     string `json:"SecurityID"`     //公債代號
+	SecurityAmount int64  `json:"SecurityAmount"` //帳戶款項金額
+	Balance        int64  `json:"Balance"`        //帳戶券項金額
+	Position       int64  `json:"Position"`       //帳戶券項金額
+	TotalPayment   int64  `json:"TotalPayment"`   //交易總計券項金額
 }
 
 type Account struct {
 	ObjectType string  `json:"docType"`   // default set to "account"
 	AccountID  string  `json:"AccountID"` // account ID
-	BankID     string  `json:"BankID"`    // the fieldtags are needed to keep case from bouncing around
-	BankName   string  `json:"BankName"`
-	CustName   string  `json:CustName` //客戶名稱
-	CustType   string  `json:CustType` //存戶類別編號
-	Status     string  `json:"Status"` // Status values ( NORMAL, PAUSED )
+	BankID     string  `json:"BankID"`    // 清算銀行代號
+	BankName   string  `json:"BankName"`  // 清算銀行名稱
+	CustName   string  `json:CustName`    //客戶名稱
+	CustType   string  `json:CustType`    //存戶類別編號
+	Status     string  `json:"Status"`    // Status values ( NORMAL, PAUSED )
 	Assets     []Asset `json:"Assets"`
 }
 
@@ -107,6 +108,7 @@ func (s *SmartContract) initAccount(
 	asset.SecurityAmount = SecurityAmount
 	asset.Balance = Balance
 	asset.Position = Position
+	asset.TotalPayment = 0
 
 	account := Account{}
 	account.ObjectType = accountObjectType
@@ -118,6 +120,11 @@ func (s *SmartContract) initAccount(
 	account.Status = Status
 	account.Assets = append(account.Assets, asset)
 
+	err = updateBankTotals(stub, BankID, SecurityID, AccountID, Balance, SecurityAmount, false)
+	if err != nil {
+		return shim.Error("Failed to change banktotal state")
+	}
+
 	accountAsBytes, err = json.Marshal(account)
 	if err != nil {
 		return shim.Error(err.Error())
@@ -128,10 +135,10 @@ func (s *SmartContract) initAccount(
 		return shim.Error(err.Error())
 	}
 
-	err = updateBankAccounts(stub, BankID, AccountID)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
+	//err = updateBankAccounts(stub, BankID, AccountID)
+	//if err != nil {
+	//	return shim.Error(err.Error())
+	//}
 
 	return shim.Success(accountAsBytes)
 }
@@ -236,6 +243,7 @@ func (s *SmartContract) updateAccount(
 		asset.SecurityAmount = SecurityAmount
 		asset.Balance = Balance
 		asset.Position = Position
+		asset.TotalPayment = 0
 		account.Assets = append(account.Assets, asset)
 	}
 
@@ -453,6 +461,7 @@ func (s *SmartContract) updateAsset(stub shim.ChaincodeStubInterface, args []str
 		asset.SecurityAmount = SecurityAmount
 		asset.Balance = Balance
 		asset.Position = Position
+		asset.TotalPayment = 0
 	}
 	accountAsBytes, err := json.Marshal(account)
 	if err != nil {
@@ -509,13 +518,15 @@ func (s *SmartContract) updateAssetBalance(stub shim.ChaincodeStubInterface, arg
 	doflg = false
 	for key, val := range account.Assets {
 		if val.SecurityID == SecurityID {
-			if BuyOrSell == "SELL" {
+			if BuyOrSell == "S" {
 				account.Assets[key].Balance -= Balance
 				account.Assets[key].Position -= Position
+				account.Assets[key].TotalPayment += Balance
 			}
-			if BuyOrSell == "BUY" {
+			if BuyOrSell == "B" {
 				account.Assets[key].Balance += Balance
 				account.Assets[key].Position += Position
+				account.Assets[key].TotalPayment -= Balance
 			}
 			doflg = true
 		}
@@ -674,6 +685,10 @@ func (s *SmartContract) queryAssetInfo(APIstub shim.ChaincodeStubInterface, args
 			buffer.WriteString(", \"Position\":")
 			buffer.WriteString("\"")
 			buffer.WriteString(strconv.FormatInt(val.Position, 10))
+			buffer.WriteString("\"")
+			buffer.WriteString(", \"TotalPayment\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(strconv.FormatInt(val.TotalPayment, 10))
 			buffer.WriteString("\"")
 			buffer.WriteString("}")
 			bArrayMemberAlreadyWritten = true

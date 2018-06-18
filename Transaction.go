@@ -20,6 +20,7 @@ const TransactionObjectType string = "Transaction"
 const QueuedTXObjectType string = "QueuedTX"
 const HistoryTXObjectType string = "HistoryTX"
 const timelayout string = "20060102150405"
+const timelayout2 string = "2006/01/02 15:04:05"
 
 //同資放行處理flag
 const approved0 string = "0"   //預設款夠，Finished
@@ -28,31 +29,34 @@ const approved2 string = "2"   //不夠，Waiting4Payment
 const approved21 string = "21" //款不足，Cancalled
 const approved22 string = "22" //放行，Finished
 const approved3 string = "3"   //系統錯誤，Cancalled
+const approved5 string = "5"   //自動檢核Account的SecurityAmount
 
 type Transaction struct {
-	ObjectType     string `json:"docType"`        // default set to "Transaction"
-	TXID           string `json:"TXID"`           // Transaction ID
-	TXType         string `json:"TXType"`         // Transaction TXType BUY or SELL
-	TXFrom         string `json:"TXFrom"`         // Transaction from
-	TXTo           string `json:"TXTo"`           // Transaction to
-	BankFrom       string `json:"BankFrom"`       // Bank from
-	BankTo         string `json:"BankTo"`         // Bank to
-	SecurityID     string `json:"SecurityID"`     // SecurityID
-	SecurityAmount int64  `json:"SecurityAmount"` // SecurityAmount
-	Payment        int64  `json:"Payment"`        // Payment
-	isPutToQueue   bool   `json:"isPutToQueue"`   // isPutToQueue
-	TXStatus       string `json:"TXStatus"`       // Pending, Matched, Finished, Cancalled, PaymentError,
-	IsFrozen       bool   `json:"isFrozen"`
-	CreateTime     string `json:"createTime"`
-	UpdateTime     string `json:"updateTime"`
-	TXIndex        string `json:"TXIndex"`  // Transaction Index(全部比對)
-	TXSIndex       string `json:"TXSIndex"` // Transaction Short Index(沒有比對SecurityAmount,Payment)
-	TXHcode        string `json:"TXHcode"`  // Transaction Hcode(更正交易序號)
-	TXFromBalance  int64  `json:"TXFromBalance"`
-	TXFromPosition int64  `json:"TXFromPosition"`
-	MatchedTXID    string `json:"MatchedTXID"`
-	TXMemo         string `json:"TXMemo"`   //交易說明
-	TXErrMsg       string `json:"TXErrMsg"` //交易錯誤說明
+	ObjectType         string `json:"docType"`            // default set to "Transaction"
+	TXID               string `json:"TXID"`               // Transaction ID
+	TXType             string `json:"TXType"`             // Transaction TXType BUY or SELL
+	TXFrom             string `json:"TXFrom"`             // Transaction from
+	TXTo               string `json:"TXTo"`               // Transaction to
+	BankFrom           string `json:"BankFrom"`           // Bank from
+	BankTo             string `json:"BankTo"`             // Bank to
+	SecurityID         string `json:"SecurityID"`         // SecurityID
+	SecurityAmount     int64  `json:"SecurityAmount"`     // SecurityAmount
+	Payment            int64  `json:"Payment"`            // Payment
+	isPutToQueue       bool   `json:"isPutToQueue"`       // isPutToQueue = true 代表資料檢核成功
+	TXStatus           string `json:"TXStatus"`           // Pending, Matched, Finished, Cancalled, PaymentError,
+	IsFrozen           bool   `json:"isFrozen"`           //是否有圈存
+	CreateTime         string `json:"createTime"`         //建立時間
+	UpdateTime         string `json:"updateTime"`         //更新時間
+	TXIndex            string `json:"TXIndex"`            // Transaction Index(全部比對)
+	TXSIndex           string `json:"TXSIndex"`           // Transaction Short Index(沒有比對SecurityAmount,Payment，用來判斷金額或面額錯輸)
+	TXHcode            string `json:"TXHcode"`            // Transaction Hcode(更正交易序號)
+	TXFromBalance      int64  `json:"TXFromBalance"`      //未交易前的帳戶券數
+	TXFromPosition     int64  `json:"TXFromPosition"`     //未交易前的帳戶券數
+	TXFromAmount       int64  `json:"TXFromAmount"`       //未交易前的帳戶款數
+	TXFromTotalPayment int64  `json:"TXFromTotalPayment"` //未交易前的帳戶總交易券數
+	MatchedTXID        string `json:"MatchedTXID"`        //比對序號
+	TXMemo             string `json:"TXMemo"`             //交易說明
+	TXErrMsg           string `json:"TXErrMsg"`           //交易錯誤說明
 }
 
 /*
@@ -83,8 +87,8 @@ type TransactionHistory struct {
 }
 
 /*
-peer chaincode invoke -n mycc3 -c '{"Args":["submitApproveTransaction", "BANK004B00400000000120180415070724","0","BANKCBC"]}' -C myc -v 9.0
-peer chaincode invoke -n mycc3 -c '{"Args":["submitApproveTransaction", "BANK002S00200000000120180415065316","0","BANKCBC"]}' -C myc -v 9.0
+peer chaincode invoke -n mycc -c '{"Args":["submitApproveTransaction", "BANK004B00400000000120180415070724","0","BANKCBC"]}' -C myc -v 9.0
+peer chaincode invoke -n mycc -c '{"Args":["submitApproveTransaction", "BANK002S00200000000120180415065316","0","BANKCBC"]}' -C myc -v 9.0
 
 */
 
@@ -93,6 +97,7 @@ func (s *SmartContract) submitApproveTransaction(
 	args []string) peer.Response {
 
 	TimeNow := time.Now().Format(timelayout)
+
 	err := checkArgArrayLength(args, 2)
 	if err != nil {
 		return shim.Error(err.Error())
@@ -103,10 +108,15 @@ func (s *SmartContract) submitApproveTransaction(
 	if len(args[1]) <= 0 {
 		return shim.Error("Admin must be a non-empty string")
 	}
-
+	//BK004S00400000000120180610041355
 	TXID := strings.ToUpper(args[0])
 	TXKEY := SubString(TimeNow, 0, 8)
 	HTXKEY := "H" + SubString(TimeNow, 0, 8)
+	TXDAY := SubString(TXID, 18, 8)
+	if TXDAY < TXKEY {
+		TXKEY = TXDAY
+		HTXKEY = "H" + TXKEY
+	}
 
 	ApproveFlag := approved0
 	ValueAsBytes, err := stub.GetState("approveflag")
@@ -114,6 +124,20 @@ func (s *SmartContract) submitApproveTransaction(
 		ApproveFlag = string(ValueAsBytes)
 	}
 	fmt.Printf("1.ApproveFlag=%s\n", ApproveFlag)
+	transaction, err := getTransactionStructFromID(stub, TXID)
+	if err != nil {
+		return shim.Error("TXID transacton does not found.")
+	}
+
+	MatchedTXID := transaction.MatchedTXID
+	SecurityID := transaction.SecurityID
+	SecurityAmount := transaction.SecurityAmount
+	Payment := transaction.Payment
+	TXType := transaction.TXType
+	TXFrom := transaction.TXFrom
+	TXTo := transaction.TXTo
+	BankFrom := transaction.BankFrom
+	BankTo := transaction.BankTo
 
 	isApproved := true
 	NewStatus := "Finished"
@@ -124,7 +148,7 @@ func (s *SmartContract) submitApproveTransaction(
 		isApproved = true
 		NewStatus = "Waiting4Payment"
 	} else if ApproveFlag == approved2 {
-		isApproved = false
+		isApproved = true
 		NewStatus = "PaymentError"
 	} else if ApproveFlag == approved21 {
 		isApproved = false
@@ -135,24 +159,27 @@ func (s *SmartContract) submitApproveTransaction(
 	} else if ApproveFlag == approved3 {
 		isApproved = false
 		NewStatus = "Cancalled2"
+	} else if ApproveFlag == approved5 {
+		_, _, securityamount, _, errMsg := checkAccountBalance(stub, SecurityID, Payment, TXFrom, TXType)
+		fmt.Printf("0-1.Account securityamount=%s\n", securityamount)
+		fmt.Printf("0-2.Transaction SecurityAmount=%s\n", SecurityAmount)
+		fmt.Printf("0-3.Approved errMsg=%s\n", errMsg)
+		if errMsg != "" {
+			isApproved = false
+			NewStatus = "Cancalled2"
+		} else if securityamount < SecurityAmount {
+			isApproved = true
+			NewStatus = "PaymentError"
+		} else {
+			isApproved = true
+			NewStatus = "Finished"
+		}
 	}
-
-	transaction, err := getTransactionStructFromID(stub, TXID)
-	if err != nil {
-		return shim.Error("TXID transacton does not found.")
-	}
-	MatchedTXID := transaction.MatchedTXID
-	SecurityID := transaction.SecurityID
-	SecurityAmount := transaction.SecurityAmount
-	Payment := transaction.Payment
-	TXType := transaction.TXType
-	TXFrom := transaction.TXFrom
-	TXTo := transaction.TXTo
 
 	fmt.Printf("1.Approved TXID=%s\n", TXID)
 	fmt.Printf("2.Approved MatchedTXID=%s\n", MatchedTXID)
 	fmt.Printf("3.Approved TXKEY=%s\n", TXKEY)
-	fmt.Printf("4.Approved TXKEY=%s\n", HTXKEY)
+	fmt.Printf("4.Approved HTXKEY=%s\n", HTXKEY)
 
 	if isApproved != true {
 		err := updateQueuedTransactionApproveStatus(stub, TXKEY, TXID, MatchedTXID, NewStatus)
@@ -175,34 +202,38 @@ func (s *SmartContract) submitApproveTransaction(
 		}
 
 		if TXType == "S" {
-			senderBalance, receiverBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
-			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, TXFrom, TXTo)
-			err = updateBankTotals(stub, TXFrom, SecurityID, Payment, false)
-			if err != nil {
-				return shim.Error(err.Error())
+			senderBalance, receiverBalance, senderTotalPayment, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
+			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXTo)
+			if BankFrom != BankTo {
+				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
+				if err != nil {
+					return shim.Error(err.Error())
+				}
+				err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, true)
+				if err != nil {
+					return shim.Error(err.Error())
+				}
 			}
-			err = updateBankTotals(stub, TXTo, SecurityID, Payment, true)
-			if err != nil {
-				return shim.Error(err.Error())
-			}
-			if (senderBalance < 0) || (receiverBalance < 0) {
-				return shim.Error("senderBalance,receiverBalance <0")
+			if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
+				return shim.Error("senderBalance,receiverBalance,senderTotalPayment <0")
 			}
 
 		}
 		if TXType == "B" {
-			senderBalance, receiverBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
-			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, TXTo, TXFrom)
-			err = updateBankTotals(stub, TXFrom, SecurityID, Payment, false)
-			if err != nil {
-				return shim.Error(err.Error())
+			senderBalance, receiverBalance, senderTotalPayment, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
+			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
+			if BankFrom != BankTo {
+				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
+				if err != nil {
+					return shim.Error(err.Error())
+				}
+				err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, true)
+				if err != nil {
+					return shim.Error(err.Error())
+				}
 			}
-			err = updateBankTotals(stub, TXTo, SecurityID, Payment, true)
-			if err != nil {
-				return shim.Error(err.Error())
-			}
-			if (senderBalance < 0) || (receiverBalance < 0) {
-				return shim.Error("senderBalance,receiverBalance <0")
+			if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
+				return shim.Error("senderBalance,receiverBalance,senderTotalPayment <0")
 			}
 
 		}
@@ -238,7 +269,7 @@ func (s *SmartContract) submitApproveTransaction(
 
 }
 
-//peer chaincode invoke -n mycc3 -c '{"Args":["submitEndDayTransaction", "BANK004S00400000000120180414121032" , "BANKCBC" ]}' -C myc -v 1.0
+//peer chaincode invoke -n mycc -c '{"Args":["submitEndDayTransaction", "BANK004S00400000000120180414121032" , "BANKCBC" ]}' -C myc -v 1.0
 
 func (s *SmartContract) submitEndDayTransaction(
 	stub shim.ChaincodeStubInterface,
@@ -246,6 +277,7 @@ func (s *SmartContract) submitEndDayTransaction(
 	//var MatchedTXID string
 	//MatchedTXID = ""
 	TimeNow := time.Now().Format(timelayout)
+
 	err := checkArgArrayLength(args, 2)
 	if err != nil {
 		return shim.Error(err.Error())
@@ -263,6 +295,11 @@ func (s *SmartContract) submitEndDayTransaction(
 	//TimeNow := time.Now().Format(timelayout)
 	TXKEY := SubString(TimeNow, 0, 8)
 	HTXKEY := "H" + SubString(TimeNow, 0, 8)
+	TXDAY := SubString(TXID, 18, 8)
+	if TXDAY < TXKEY {
+		TXKEY = TXDAY
+		HTXKEY = "H" + TXKEY
+	}
 
 	MatchedTXID, err2 := updateEndDayTransactionStatus(stub, TXID)
 	if err2 != nil {
@@ -283,14 +320,14 @@ func (s *SmartContract) submitEndDayTransaction(
 }
 
 /*
-peer chaincode invoke -n mycc3 -c '{"Args":["securityTransfer", "B","004000000001" , "002000000001" , "A07103" , "102000","100000","true"]}' -C myc -v 1.0
-peer chaincode invoke -n mycc3 -c '{"Args":["securityTransfer", "S","002000000001" , "004000000001" , "A07103" , "102000","100000","true"]}' -C myc -v 1.0
+peer chaincode invoke -n mycc -c '{"Args":["securityTransfer", "B","004000000001" , "002000000001" , "A07103" , "102000","100000","true"]}' -C myc -v 1.0
+peer chaincode invoke -n mycc -c '{"Args":["securityTransfer", "S","002000000001" , "004000000001" , "A07103" , "102000","100000","true"]}' -C myc -v 1.0
 
-peer chaincode invoke -n mycc3 -c '{"Args":["securityTransfer", "B","004000000001" , "004000000002" , "A07103" , "102000","100000","true"]}' -C myc
-peer chaincode invoke -n mycc3 -c '{"Args":["securityTransfer", "S","004000000002" , "004000000001" , "A07103" , "102000","100000","true"]}' -C myc
+peer chaincode invoke -n mycc -c '{"Args":["securityTransfer", "B","004000000001" , "004000000002" , "A07103" , "102000","100000","true"]}' -C myc
+peer chaincode invoke -n mycc -c '{"Args":["securityTransfer", "S","004000000002" , "004000000001" , "A07103" , "102000","100000","true"]}' -C myc
 
-peer chaincode invoke -n mycc3 -c '{"Args":["securityTransfer", "S","002000000001" , "002000000002" , "A07103" , "102000","100000","true"]}' -C myc
-peer chaincode invoke -n mycc3 -c '{"Args":["securityTransfer", "B","002000000002" , "002000000001" , "A07103" , "102000","100000","true"]}' -C myc
+peer chaincode invoke -n mycc -c '{"Args":["securityTransfer", "S","002000000001" , "002000000002" , "A07103" , "102000","100000","true"]}' -C myc
+peer chaincode invoke -n mycc -c '{"Args":["securityTransfer", "B","002000000002" , "002000000001" , "A07103" , "102000","100000","true"]}' -C myc
 
 
 */
@@ -299,6 +336,7 @@ func (s *SmartContract) securityTransfer(
 	args []string) peer.Response {
 
 	TimeNow := time.Now().Format(timelayout)
+
 	newTX, isPutInQueue, errMsg := validateTransaction(stub, args)
 	if errMsg != "" {
 		//return shim.Error(err.Error())
@@ -322,6 +360,12 @@ func (s *SmartContract) securityTransfer(
 	doflg = false
 	TXKEY := SubString(TimeNow, 0, 8) //A0710220180326
 	HTXKEY := "H" + TXKEY
+	TXDAY := SubString(TXID, 18, 8)
+	if TXDAY < TXKEY {
+		TXKEY = TXDAY
+		HTXKEY = "H" + TXKEY
+	}
+
 	if BankFrom != BankTo {
 		if SecurityAmount == 0 {
 			if TXType == "S" {
@@ -350,13 +394,17 @@ func (s *SmartContract) securityTransfer(
 	}
 
 	fmt.Printf("2.ApproveFlag=%s\n", ApproveFlag)
-
+	fmt.Printf("3.isPutInQueue=%s\n", isPutInQueue)
+	if isPutInQueue == false {
+		newTX.TXStatus = "Cancalled"
+	}
 	if isPutInQueue == true {
 
 		queueAsBytes, err := stub.GetState(TXKEY)
 		if err != nil {
 			//return shim.Error(err.Error())
 			newTX.TXErrMsg = TXKEY + ":QueueID does not exits."
+			newTX.TXStatus = "Cancalled"
 		}
 		queuedTx := QueuedTransaction{}
 		json.Unmarshal(queueAsBytes, &queuedTx)
@@ -364,6 +412,7 @@ func (s *SmartContract) securityTransfer(
 		historyAsBytes, err := stub.GetState(HTXKEY)
 		if err != nil {
 			newTX.TXErrMsg = HTXKEY + ":HistoryID does not exits."
+			newTX.TXStatus = "Cancalled"
 		}
 		historyNewTX := TransactionHistory{}
 		json.Unmarshal(historyAsBytes, &historyNewTX)
@@ -400,6 +449,8 @@ func (s *SmartContract) securityTransfer(
 						if doflg == true {
 							//return shim.Error("doflg eq to true")
 							newTX.TXErrMsg = "doflg can not equle to true."
+							newTX.TXStatus = "Cancalled"
+							break
 						}
 						newTX.MatchedTXID = val.TXID
 						queuedTx.Transactions[key].MatchedTXID = TXID
@@ -408,6 +459,8 @@ func (s *SmartContract) securityTransfer(
 						if err != nil {
 							//return shim.Error(err.Error())
 							newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Matched."
+							newTX.TXStatus = "Cancalled"
+							break
 						}
 						queuedTx.Transactions[key].TXStatus = "Matched"
 						historyNewTX.Transactions[key].TXStatus = "Matched"
@@ -418,41 +471,57 @@ func (s *SmartContract) securityTransfer(
 						newTX.TXMemo = ""
 						if TXType == "S" {
 							//轉出          轉入
-							senderBalance, receiverBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
-							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, TXFrom, TXTo)
-							err = updateBankTotals(stub, TXFrom, SecurityID, Payment, true)
-							if err != nil {
-								//return shim.Error(err.Error())
-								newTX.TXErrMsg = "Failed to execute updateBankTotals TXFrom:" + TXFrom
+							senderBalance, receiverBalance, senderTotalPayment, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
+							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXTo)
+							if BankFrom != BankTo {
+								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
+								if err != nil {
+									//return shim.Error(err.Error())
+									newTX.TXErrMsg = "Failed to execute updateBankTotals TXFrom:" + TXFrom
+									newTX.TXStatus = "Cancalled"
+									break
+								}
+								err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, false)
+								if err != nil {
+									//return shim.Error(err.Error())
+									newTX.TXErrMsg = "Failed to execute updateBankTotals2 TXTo:" + TXTo
+									newTX.TXStatus = "Cancalled"
+									break
+								}
 							}
-							err = updateBankTotals(stub, TXTo, SecurityID, Payment, false)
-							if err != nil {
-								//return shim.Error(err.Error())
-								newTX.TXErrMsg = "Failed to execute updateBankTotals2 TXTo:" + TXTo
-							}
-							if (senderBalance < 0) || (receiverBalance < 0) {
+							if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
 								//return shim.Error("TxType=S - senderBalance or receiverBalance <0")
-								newTX.TXErrMsg = "TxType=S - senderBalance or receiverBalance <0"
+								newTX.TXErrMsg = "TxType=S - senderBalance or receiverBalance or senderTotalPayment <0"
+								newTX.TXStatus = "Cancalled"
+								break
 							}
 
 						}
 						if TXType == "B" {
 							//轉出          轉入
-							senderBalance, receiverBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
-							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, TXTo, TXFrom)
-							err = updateBankTotals(stub, TXFrom, SecurityID, Payment, true)
-							if err != nil {
-								//return shim.Error(err.Error())
-								newTX.TXErrMsg = "Failed to execute updateBankTotals TXFrom:" + TXFrom
+							senderBalance, receiverBalance, senderTotalPayment, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
+							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
+							if BankFrom != BankTo {
+								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
+								if err != nil {
+									//return shim.Error(err.Error())
+									newTX.TXErrMsg = "Failed to execute updateBankTotals TXFrom:" + TXFrom
+									newTX.TXStatus = "Cancalled"
+									break
+								}
+								err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, false)
+								if err != nil {
+									//return shim.Error(err.Error())
+									newTX.TXErrMsg = "Failed to execute updateBankTotals2 TXTo:" + TXTo
+									newTX.TXStatus = "Cancalled"
+									break
+								}
 							}
-							err = updateBankTotals(stub, TXTo, SecurityID, Payment, false)
-							if err != nil {
-								//return shim.Error(err.Error())
-								newTX.TXErrMsg = "Failed to execute updateBankTotals2 TXTo:" + TXTo
-							}
-							if (senderBalance < 0) || (receiverBalance < 0) {
+							if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
 								//return shim.Error("TxType=B - senderBalance or receiverBalance <0")
-								newTX.TXErrMsg = "TxType=B - senderBalance or receiverBalance <0"
+								newTX.TXErrMsg = "TxType=B - senderBalance or receiverBalance or senderTotalPayment <0"
+								newTX.TXStatus = "Cancalled"
+								break
 							}
 
 						}
@@ -473,19 +542,38 @@ func (s *SmartContract) securityTransfer(
 									if err != nil {
 										//return shim.Error(err.Error())
 										newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Finished."
+										newTX.TXStatus = "Cancalled"
+										break
+									}
+								} else if ApproveFlag == approved2 {
+									queuedTx.Transactions[key].TXStatus = "PaymentError"
+									historyNewTX.Transactions[key].TXStatus = "PaymentError"
+									historyNewTX.TXStatus[key] = "PaymentError"
+									newTX.TXStatus = "PaymentError"
+									queuedTx.Transactions[key].TXMemo = "轉入方款不足"
+									historyNewTX.Transactions[key].TXMemo = "轉入方款不足"
+									newTX.TXMemo = "轉入方款不足"
+									err := updateTransactionStatus(stub, val.TXID, "PaymentError", TXID)
+									if err != nil {
+										//return shim.Error(err.Error())
+										newTX.TXErrMsg = "Failed to execute updateTransactionStatus = PaymentError."
+										newTX.TXStatus = "Cancalled"
+										break
 									}
 								} else {
 									queuedTx.Transactions[key].TXStatus = "Waiting4Payment"
 									historyNewTX.Transactions[key].TXStatus = "Waiting4Payment"
 									historyNewTX.TXStatus[key] = "Waiting4Payment"
 									newTX.TXStatus = "Waiting4Payment"
-									queuedTx.Transactions[key].TXMemo = "等待同資回應"
-									historyNewTX.Transactions[key].TXMemo = "等待同資回應"
-									newTX.TXMemo = "等待同資回應"
+									queuedTx.Transactions[key].TXMemo = "等待回應"
+									historyNewTX.Transactions[key].TXMemo = "等待回應"
+									newTX.TXMemo = "等待回應"
 									err := updateTransactionStatus(stub, val.TXID, "Waiting4Payment", TXID)
 									if err != nil {
 										//return shim.Error(err.Error())
 										newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Waiting4Payment."
+										newTX.TXStatus = "Cancalled"
+										break
 									}
 								}
 							} else {
@@ -500,6 +588,8 @@ func (s *SmartContract) securityTransfer(
 								if err != nil {
 									//return shim.Error(err.Error())
 									newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Finished."
+									newTX.TXStatus = "Cancalled"
+									break
 								}
 							}
 						} else {
@@ -514,6 +604,8 @@ func (s *SmartContract) securityTransfer(
 							if err != nil {
 								//return shim.Error(err.Error())
 								newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Finished."
+								newTX.TXStatus = "Cancalled"
+								break
 							}
 						}
 
@@ -528,9 +620,9 @@ func (s *SmartContract) securityTransfer(
 								newTX.MatchedTXID = val.TXID
 								queuedTx.Transactions[key].MatchedTXID = TXID
 								historyNewTX.Transactions[key].MatchedTXID = TXID
-								newTX.TXMemo = "交易金額疑似有誤"
-								queuedTx.Transactions[key].TXMemo = "交易金額疑似有誤"
-								historyNewTX.Transactions[key].TXMemo = "交易金額疑似有誤"
+								newTX.TXMemo = "交易金額疑輸錯"
+								queuedTx.Transactions[key].TXMemo = "交易金額疑輸錯"
+								historyNewTX.Transactions[key].TXMemo = "交易金額疑輸錯"
 								newTX.TXErrMsg = "SecurityAmount != val.SecurityAmount"
 								queuedTx.Transactions[key].TXErrMsg = "SecurityAmount != val.SecurityAmount"
 								historyNewTX.Transactions[key].TXErrMsg = "SecurityAmount != val.SecurityAmount"
@@ -538,13 +630,23 @@ func (s *SmartContract) securityTransfer(
 								newTX.MatchedTXID = val.TXID
 								queuedTx.Transactions[key].MatchedTXID = TXID
 								historyNewTX.Transactions[key].MatchedTXID = TXID
-								newTX.TXMemo = "交易面額疑似有誤"
-								queuedTx.Transactions[key].TXMemo = "交易面額疑似有誤"
-								historyNewTX.Transactions[key].TXMemo = "交易面額疑似有誤"
+								newTX.TXMemo = "交易面額疑輸錯"
+								queuedTx.Transactions[key].TXMemo = "交易面額疑輸錯"
+								historyNewTX.Transactions[key].TXMemo = "交易面額疑輸錯"
 								newTX.TXErrMsg = "Payment != val.Payment"
 								queuedTx.Transactions[key].TXErrMsg = "Payment != val.Payment"
 								historyNewTX.Transactions[key].TXErrMsg = "Payment != val.Payment"
 							}
+						} else if val.TXMemo == "轉出方券不足" && val.TXType == "S" {
+							newTX.MatchedTXID = val.TXID
+							queuedTx.Transactions[key].MatchedTXID = TXID
+							historyNewTX.Transactions[key].MatchedTXID = TXID
+							newTX.TXMemo = "轉出方券不足"
+							queuedTx.Transactions[key].TXMemo = "轉出方券不足"
+							historyNewTX.Transactions[key].TXMemo = "轉出方券不足"
+							newTX.TXErrMsg = val.TXFrom + ":" + val.TXErrMsg
+							queuedTx.Transactions[key].TXErrMsg = val.TXFrom + ":" + val.TXErrMsg
+							historyNewTX.Transactions[key].TXErrMsg = val.TXFrom + ":" + val.TXErrMsg
 						}
 					}
 				}
@@ -596,6 +698,7 @@ func validateTransaction(
 	stub shim.ChaincodeStubInterface,
 	args []string) (Transaction, bool, string) {
 	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	var err error
 	var TXData1, TXData2, TXIndex, TXSIndex, TXID string
 
@@ -606,8 +709,8 @@ func validateTransaction(
 	transaction.TXErrMsg = ""
 	transaction.TXHcode = ""
 	transaction.IsFrozen = false
-	transaction.CreateTime = TimeNow
-	transaction.UpdateTime = TimeNow
+	transaction.CreateTime = TimeNow2
+	transaction.UpdateTime = TimeNow2
 
 	err = checkArgArrayLength(args, 7)
 	if err != nil {
@@ -696,18 +799,22 @@ func validateTransaction(
 	}
 	transaction.TXIndex = TXIndex
 	transaction.TXSIndex = TXSIndex
-	balance, position, err := checkAccountBalance(stub, SecurityID, Payment, TXFrom, TXType)
-	if err != nil {
-		transaction.TXMemo = "券不足"
-		transaction.TXErrMsg = TXFrom + ":Payment > Balance"
+	balance, position, securityamount, totalpayment, errMsg := checkAccountBalance(stub, SecurityID, Payment, TXFrom, TXType)
+	if errMsg != "" && TXType == "S" {
+		transaction.TXMemo = "轉出方券不足"
+		//transaction.TXErrMsg = TXFrom + ":Payment > Balance"
+		transaction.TXErrMsg = errMsg
 		fmt.Printf("Payment: %s\n", Payment)
 		fmt.Printf("balance: %s\n", balance)
 		fmt.Printf("position: %s\n", position)
-		return transaction, false, TXFrom + ":Payment > Balance"
+		fmt.Printf("securityamount: %s\n", securityamount)
+		fmt.Printf("totalpayment: %s\n", totalpayment)
+		return transaction, false, errMsg
 	}
 	transaction.TXFromBalance = balance
 	transaction.TXFromPosition = position
-
+	transaction.TXFromAmount = securityamount
+	transaction.TXFromTotalPayment = totalpayment
 	transaction.TXStatus = "Pending"
 	return transaction, isPutToQueue, ""
 
@@ -776,6 +883,7 @@ func getHistoryTransactionStructFromID(
 func getQueueArrayFromQuery(
 	stub shim.ChaincodeStubInterface) ([]QueuedTransaction, int, error) {
 	TimeNow := time.Now().Format(timelayout)
+
 	//startKey := "20180000" //20180326
 	//endKey := "20181231"
 	var doflg bool
@@ -783,6 +891,7 @@ func getQueueArrayFromQuery(
 	doflg = false
 	sumLen = 0
 	TXKEY := SubString(TimeNow, 0, 8)
+
 	resultsIterator, err := stub.GetStateByRange(TXKEY, TXKEY)
 	if err != nil {
 		return nil, sumLen, err
@@ -829,29 +938,49 @@ func getMD5Str(myData string) string {
 	return encodeStr
 }
 
-func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Payment int64, sender string, TXType string) (int64, int64, error) {
+func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Payment int64, sender string, TXType string) (int64, int64, int64, int64, string) {
 	senderAccount, err := getAccountStructFromID(stub, sender)
 	var Balance int64
 	var Position int64
+	var SecurityAmount int64
+	var TotalPayment int64
 	Balance = 0
 	Position = 0
+	SecurityAmount = 0
+	TotalPayment = 0
 	if err != nil {
-		return Balance, Position, err
+		return Balance, Position, SecurityAmount, TotalPayment, "getAccountStructFromID error:" + sender
 	}
-
+	//if TXType != "S" {
+	//	return Balance, Position, SecurityAmount, TotalPayment, "TXType is not equle to S."
+	//}
 	var doflg bool
 	doflg = false
 	for key, val := range senderAccount.Assets {
 		if val.SecurityID == SecurityID {
+			SecurityAmount = senderAccount.Assets[key].SecurityAmount
 			Balance = senderAccount.Assets[key].Balance
 			Position = senderAccount.Assets[key].Position
+			TotalPayment = senderAccount.Assets[key].TotalPayment
+			fmt.Printf("1.checkAccountBalance: SecurityAmount=%d\n", SecurityAmount)
+			fmt.Printf("1.checkAccountBalance: Balance=%d\n", Balance)
+			fmt.Printf("1.checkAccountBalance: Position=%d\n", Position)
+			fmt.Printf("1.checkAccountBalance: TotalPayment=%d\n", TotalPayment)
+			fmt.Printf("1.checkAccountBalance: SecurityID=%d\n", SecurityID)
+
 			if TXType == "S" {
 				if (Payment > Balance) || (Payment > Position) {
 					errMsg := fmt.Sprintf(
 						"Error: Payment: (%s)  > Balance: (%s)",
 						strconv.FormatInt(Payment, 10),
 						strconv.FormatInt(Balance, 10))
-					return Balance, Position, errors.New(errMsg)
+					return Balance, Position, SecurityAmount, TotalPayment, errMsg
+				} else if (TotalPayment > Balance) || (TotalPayment > Position) {
+					errMsg := fmt.Sprintf(
+						"Error: TotalPayment: (%s)  > Balance: (%s)",
+						strconv.FormatInt(TotalPayment, 10),
+						strconv.FormatInt(Balance, 10))
+					return Balance, Position, SecurityAmount, TotalPayment, errMsg
 				}
 			}
 			doflg = true
@@ -862,19 +991,20 @@ func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 		errMsg := fmt.Sprintf(
 			"Error: This SecurityID does not exists (%s)",
 			SecurityID)
-		return Balance, Position, errors.New(errMsg)
+		return Balance, Position, SecurityAmount, TotalPayment, errMsg
 	}
 
-	return Balance, Position, nil
+	return Balance, Position, SecurityAmount, TotalPayment, ""
 }
 
-func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, SecurityAmount int64, Payment int64, sender string, receiver string) (int64, int64, error) {
+func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, SecurityAmount int64, Payment int64, sender string, receiver string) (int64, int64, int64, error) {
 	senderAccount, err := getAccountStructFromID(stub, sender)
 	receiverAccount, err := getAccountStructFromID(stub, receiver)
 	var senderBalance int64
 	var receiverBalance int64
+	var senderTotalPayment int64
 	if err != nil {
-		return senderBalance, receiverBalance, err
+		return senderBalance, receiverBalance, senderTotalPayment, err
 	}
 
 	var doflg bool
@@ -884,7 +1014,9 @@ func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, S
 			senderAccount.Assets[key].SecurityAmount += SecurityAmount
 			senderAccount.Assets[key].Balance -= Payment
 			senderAccount.Assets[key].Position -= Payment
+			senderAccount.Assets[key].TotalPayment += Payment
 			senderBalance = senderAccount.Assets[key].Balance
+			senderTotalPayment = senderAccount.Assets[key].TotalPayment
 			doflg = true
 			break
 		}
@@ -893,7 +1025,7 @@ func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, S
 		errMsg := fmt.Sprintf(
 			"Error: This SecurityID does not exists (%s)",
 			SecurityID)
-		return senderBalance, receiverBalance, errors.New(errMsg)
+		return senderBalance, receiverBalance, senderTotalPayment, errors.New(errMsg)
 	}
 	if doflg == true {
 		for key, val := range receiverAccount.Assets {
@@ -912,25 +1044,25 @@ func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, S
 		senderAccountAsBytes, err := json.Marshal(senderAccount)
 		err = stub.PutState(sender, senderAccountAsBytes)
 		if err != nil {
-			return senderBalance, receiverBalance, err
+			return senderBalance, receiverBalance, senderTotalPayment, err
 		}
 	}
 	if receiverBalance >= 0 {
 		receiverAccountAsBytes, err := json.Marshal(receiverAccount)
 		err = stub.PutState(receiver, receiverAccountAsBytes)
 		if err != nil {
-			return senderBalance, receiverBalance, err
+			return senderBalance, receiverBalance, senderTotalPayment, err
 		}
 	}
 	fmt.Printf("5.senderBalance= %d\n", senderBalance)
 	fmt.Printf("6.receiverBalance= %d\n", receiverBalance)
 
-	return senderBalance, receiverBalance, nil
+	return senderBalance, receiverBalance, senderTotalPayment, nil
 }
 
-func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Payment int64, sender string, receiver string) (int64, int64, error) {
+func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Balance int64, Amount int64, sender string, receiver string) (int64, int64, error) {
 	Security, err := getSecurityStructFromID(stub, SecurityID)
-	fmt.Printf("updateSecurityAmount, SecurityID=%s,Payment=%d,sender=%s,receiver=%s\n", SecurityID, Payment, sender, receiver)
+	fmt.Printf("updateSecurityAmount, SecurityID=%s,Balance=%d,Amount=%d,sender=%s,receiver=%s\n", SecurityID, Balance, Amount, sender, receiver)
 
 	var senderBalance int64
 	var receiverBalance int64
@@ -944,13 +1076,15 @@ func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, P
 	doflg = false
 	for key, val := range Security.Owners {
 		if val.OwnedAccountID == sender {
-			Security.Owners[key].OwnedAmount -= Payment
-			senderBalance = Security.Owners[key].OwnedAmount
+			Security.Owners[key].OwnedBalance -= Balance
+			Security.Owners[key].OwnedAmount -= Amount
+			senderBalance = Security.Owners[key].OwnedBalance
 			doflg = true
 		}
 		if val.OwnedAccountID == receiver {
-			Security.Owners[key].OwnedAmount += Payment
-			receiverBalance = Security.Owners[key].OwnedAmount
+			Security.Owners[key].OwnedBalance += Balance
+			Security.Owners[key].OwnedAmount += Amount
+			receiverBalance = Security.Owners[key].OwnedBalance
 			doflg = true
 		}
 	}
@@ -961,24 +1095,28 @@ func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, P
 		return senderBalance, receiverBalance, errors.New(errMsg)
 	}
 	doflg = false
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 
-	for key, val := range Security.SecurityTotals {
-		fmt.Printf("1.Skey: %d\n", key)
-		fmt.Printf("2.Sval: %s\n", val)
-		if val.BankID == senderBank {
-			fmt.Printf("3.Skey: %d\n", key)
-			fmt.Printf("4.Sval: %s\n", val)
-			Security.SecurityTotals[key].TotalBalance -= Payment
-			Security.SecurityTotals[key].UpdateTime = TimeNow
-			doflg = true
-		}
-		if val.BankID == receiverBank {
-			fmt.Printf("5.Skey: %d\n", key)
-			fmt.Printf("6.Sval: %s\n", val)
-			Security.SecurityTotals[key].TotalBalance += Payment
-			Security.SecurityTotals[key].UpdateTime = TimeNow
-			doflg = true
+	if senderBank != receiverBank {
+		for key, val := range Security.SecurityTotals {
+			fmt.Printf("1.Skey: %d\n", key)
+			fmt.Printf("2.Sval: %s\n", val)
+			if val.BankID == senderBank {
+				fmt.Printf("3.Skey: %d\n", key)
+				fmt.Printf("4.Sval: %s\n", val)
+				Security.SecurityTotals[key].TotalBalance -= Balance
+				Security.SecurityTotals[key].TotalAmount -= Amount
+				Security.SecurityTotals[key].UpdateTime = TimeNow2
+				doflg = true
+			}
+			if val.BankID == receiverBank {
+				fmt.Printf("5.Skey: %d\n", key)
+				fmt.Printf("6.Sval: %s\n", val)
+				Security.SecurityTotals[key].TotalBalance += Balance
+				Security.SecurityTotals[key].TotalAmount += Amount
+				Security.SecurityTotals[key].UpdateTime = TimeNow2
+				doflg = true
+			}
 		}
 	}
 
@@ -997,9 +1135,9 @@ func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, P
 	return senderBalance, receiverBalance, nil
 }
 
-func resetSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Payment int64, sender string, receiver string) (int64, int64, error) {
+func resetSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Balance int64, Amount int64, sender string, receiver string) (int64, int64, error) {
 
-	fmt.Printf("resetSecurityAmount, SecurityID=%s,Payment=%d,sender=%s,receiver=%s\n", SecurityID, Payment, sender, receiver)
+	fmt.Printf("resetSecurityAmount, SecurityID=%s,Balance=%d,Amount=%d,sender=%s,receiver=%s\n", SecurityID, Balance, Amount, sender, receiver)
 	Security, err := getSecurityStructFromID(stub, SecurityID)
 
 	var senderBalance int64
@@ -1014,13 +1152,15 @@ func resetSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 	doflg = false
 	for key, val := range Security.Owners {
 		if val.OwnedAccountID == sender {
-			Security.Owners[key].OwnedAmount += Payment
-			senderBalance = Security.Owners[key].OwnedAmount
+			Security.Owners[key].OwnedBalance += Balance
+			Security.Owners[key].OwnedAmount += Amount
+			senderBalance = Security.Owners[key].OwnedBalance
 			doflg = true
 		}
 		if val.OwnedAccountID == receiver {
-			Security.Owners[key].OwnedAmount -= Payment
-			receiverBalance = Security.Owners[key].OwnedAmount
+			Security.Owners[key].OwnedBalance -= Balance
+			Security.Owners[key].OwnedAmount -= Amount
+			receiverBalance = Security.Owners[key].OwnedBalance
 			doflg = true
 		}
 	}
@@ -1031,24 +1171,27 @@ func resetSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 		return senderBalance, receiverBalance, errors.New(errMsg)
 	}
 	doflg = false
-	TimeNow := time.Now().Format(timelayout)
-
-	for key, val := range Security.SecurityTotals {
-		fmt.Printf("1.Skey: %d\n", key)
-		fmt.Printf("2.Sval: %s\n", val)
-		if val.BankID == senderBank {
-			fmt.Printf("3.Skey: %d\n", key)
-			fmt.Printf("4.Sval: %s\n", val)
-			Security.SecurityTotals[key].TotalBalance += Payment
-			Security.SecurityTotals[key].UpdateTime = TimeNow
-			doflg = true
-		}
-		if val.BankID == receiverBank {
-			fmt.Printf("5.Skey: %d\n", key)
-			fmt.Printf("6.Sval: %s\n", val)
-			Security.SecurityTotals[key].TotalBalance -= Payment
-			Security.SecurityTotals[key].UpdateTime = TimeNow
-			doflg = true
+	TimeNow2 := time.Now().Format(timelayout2)
+	if senderBank != receiverBank {
+		for key, val := range Security.SecurityTotals {
+			fmt.Printf("1.Skey: %d\n", key)
+			fmt.Printf("2.Sval: %s\n", val)
+			if val.BankID == senderBank {
+				fmt.Printf("3.Skey: %d\n", key)
+				fmt.Printf("4.Sval: %s\n", val)
+				Security.SecurityTotals[key].TotalBalance += Balance
+				Security.SecurityTotals[key].TotalAmount += Amount
+				Security.SecurityTotals[key].UpdateTime = TimeNow2
+				doflg = true
+			}
+			if val.BankID == receiverBank {
+				fmt.Printf("5.Skey: %d\n", key)
+				fmt.Printf("6.Sval: %s\n", val)
+				Security.SecurityTotals[key].TotalBalance -= Balance
+				Security.SecurityTotals[key].TotalAmount -= Amount
+				Security.SecurityTotals[key].UpdateTime = TimeNow2
+				doflg = true
+			}
 		}
 	}
 
@@ -1069,7 +1212,7 @@ func resetSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 
 func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXStatus string, MatchedTXID string) error {
 	fmt.Printf("1 updateTransactionStatus TXID = %s, TXStatus = %s, MatchedTXID = %s\n", TXID, TXStatus, MatchedTXID)
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	transaction, err := getTransactionStructFromID(stub, TXID)
 	transaction.TXStatus = TXStatus
 	var TXMemo, TXErrMsg string
@@ -1077,12 +1220,12 @@ func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXSt
 	TXErrMsg = ""
 
 	if TXStatus == "Waiting4Payment" {
-		TXMemo = "等待同資回應"
+		TXMemo = "等待回應"
 		transaction.TXMemo = TXMemo
 		transaction.TXStatus = "Waiting4Payment"
 	}
 	if TXStatus == "PaymentError" {
-		TXMemo = "同資款不足"
+		TXMemo = "轉入方款不足"
 		transaction.TXMemo = TXMemo
 		transaction.TXStatus = "PaymentError"
 	}
@@ -1097,7 +1240,7 @@ func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXSt
 		transaction.TXStatus = "Cancalled"
 	}
 	if TXStatus == "Cancalled2" {
-		TXMemo = "同資系統錯誤"
+		TXMemo = "系統錯誤"
 		transaction.TXMemo = TXMemo
 		transaction.TXStatus = "Cancalled"
 	}
@@ -1122,7 +1265,7 @@ func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXSt
 	transaction.MatchedTXID = MatchedTXID
 	fmt.Printf("4 updateTransactionStatus transaction MatchedTXID = %s\n", transaction.MatchedTXID)
 
-	transaction.UpdateTime = TimeNow
+	transaction.UpdateTime = TimeNow2
 	transactionAsBytes, err := json.Marshal(transaction)
 	if err != nil {
 		return err
@@ -1136,7 +1279,7 @@ func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXSt
 
 func updateQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY string, TXID string, TXStatus string) error {
 
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	queuedTX, err := getQueueStructFromID(stub, TXKEY)
 	if err != nil {
 		return err
@@ -1147,7 +1290,7 @@ func updateQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY strin
 	for key, val := range queuedTX.TXIDs {
 		if val == TXID {
 			queuedTX.Transactions[key].TXStatus = TXStatus
-			queuedTX.Transactions[key].UpdateTime = TimeNow
+			queuedTX.Transactions[key].UpdateTime = TimeNow2
 			doflg = true
 			break
 		}
@@ -1169,7 +1312,7 @@ func updateQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY strin
 
 func updateHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXKEY string, TXID string, TXStatus string) error {
 
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	historyTX, err := getHistoryTransactionStructFromID(stub, HTXKEY)
 	if err != nil {
 		return err
@@ -1180,7 +1323,7 @@ func updateHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXKEY str
 	for key, val := range historyTX.TXIDs {
 		if val == TXID {
 			historyTX.Transactions[key].TXStatus = TXStatus
-			historyTX.Transactions[key].UpdateTime = TimeNow
+			historyTX.Transactions[key].UpdateTime = TimeNow2
 			historyTX.TXStatus[key] = TXStatus
 			doflg = true
 			break
@@ -1203,7 +1346,7 @@ func updateHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXKEY str
 
 func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKEY string, TXID string, MatchedTXID string, TXStatus string) error {
 
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	queuedTX, err := getQueueStructFromID(stub, TXKEY)
 	if err != nil {
 		return err
@@ -1217,11 +1360,11 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 	TXErrMsg = ""
 
 	if TXStatus == "Waiting4Payment" {
-		TXMemo = "等待同資回應"
+		TXMemo = "等待回應"
 		NewTXStatus = "Waiting4Payment"
 	}
 	if TXStatus == "PaymentError" {
-		TXMemo = "同資款不足"
+		TXMemo = "轉入方款不足"
 		NewTXStatus = "PaymentError"
 	}
 	if TXStatus == "Cancalled" {
@@ -1233,7 +1376,7 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 		NewTXStatus = "Cancalled"
 	}
 	if TXStatus == "Cancalled2" {
-		TXMemo = "同資系統錯誤"
+		TXMemo = "系統錯誤"
 		NewTXStatus = "Cancalled"
 	}
 	if TXStatus == "Matched" {
@@ -1256,7 +1399,7 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 			fmt.Printf("4.AQval: %s\n", val)
 			queuedTX.Transactions[key].TXStatus = NewTXStatus
 			queuedTX.Transactions[key].TXMemo = TXMemo
-			queuedTX.Transactions[key].UpdateTime = TimeNow
+			queuedTX.Transactions[key].UpdateTime = TimeNow2
 			doflg1 = true
 		}
 		if val == MatchedTXID {
@@ -1264,7 +1407,7 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 			fmt.Printf("6.AQval: %s\n", val)
 			queuedTX.Transactions[key].TXStatus = NewTXStatus
 			queuedTX.Transactions[key].TXMemo = TXMemo
-			queuedTX.Transactions[key].UpdateTime = TimeNow
+			queuedTX.Transactions[key].UpdateTime = TimeNow2
 			doflg2 = true
 		}
 		if doflg1 == true && doflg2 == true {
@@ -1288,7 +1431,7 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 
 func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTXKEY string, TXID string, MatchedTXID string, TXStatus string) error {
 
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	historyTX, err := getHistoryTransactionStructFromID(stub, HTXKEY)
 	if err != nil {
 		return err
@@ -1302,11 +1445,11 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 	TXErrMsg = ""
 
 	if TXStatus == "Waiting4Payment" {
-		TXMemo = "等待同資回應"
+		TXMemo = "等待回應"
 		NewTXStatus = "Waiting4Payment"
 	}
 	if TXStatus == "PaymentError" {
-		TXMemo = "同資款不足"
+		TXMemo = "轉入方款不足"
 		NewTXStatus = "PaymentError"
 	}
 	if TXStatus == "Cancalled" {
@@ -1318,7 +1461,7 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 		NewTXStatus = "Cancalled"
 	}
 	if TXStatus == "Cancalled2" {
-		TXMemo = "同資系統錯誤"
+		TXMemo = "系統錯誤"
 		NewTXStatus = "Cancalled"
 	}
 	if TXStatus == "Matched" {
@@ -1341,7 +1484,7 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 			fmt.Printf("10.AHval: %s\n", val)
 			historyTX.Transactions[key].TXStatus = NewTXStatus
 			historyTX.Transactions[key].TXMemo = TXMemo
-			historyTX.Transactions[key].UpdateTime = TimeNow
+			historyTX.Transactions[key].UpdateTime = TimeNow2
 			historyTX.TXStatus[key] = NewTXStatus
 			doflg1 = true
 		}
@@ -1350,7 +1493,7 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 			fmt.Printf("12.AHval: %s\n", val)
 			historyTX.Transactions[key].TXStatus = NewTXStatus
 			historyTX.Transactions[key].TXMemo = TXMemo
-			historyTX.Transactions[key].UpdateTime = TimeNow
+			historyTX.Transactions[key].UpdateTime = TimeNow2
 			historyTX.TXStatus[key] = NewTXStatus
 			doflg2 = true
 		}
@@ -1373,13 +1516,14 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 	return nil
 }
 
-func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, SecurityAmount int64, Payment int64, sender string, receiver string) (int64, int64, error) {
+func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, SecurityAmount int64, Payment int64, sender string, receiver string) (int64, int64, int64, error) {
 	senderAccount, err := getAccountStructFromID(stub, sender)
 	receiverAccount, err := getAccountStructFromID(stub, receiver)
 	var senderBalance int64
 	var receiverBalance int64
+	var senderTotalPayment int64
 	if err != nil {
-		return senderBalance, receiverBalance, err
+		return senderBalance, receiverBalance, senderTotalPayment, err
 	}
 
 	var doflg bool
@@ -1389,6 +1533,7 @@ func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Se
 			senderAccount.Assets[key].SecurityAmount -= SecurityAmount
 			senderAccount.Assets[key].Balance += Payment
 			senderAccount.Assets[key].Position += Payment
+			senderAccount.Assets[key].TotalPayment -= Payment
 			senderBalance = senderAccount.Assets[key].Balance
 			doflg = true
 			break
@@ -1398,7 +1543,7 @@ func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Se
 		errMsg := fmt.Sprintf(
 			"Error: This SecurityID does not exists (%s)",
 			SecurityID)
-		return senderBalance, receiverBalance, errors.New(errMsg)
+		return senderBalance, receiverBalance, senderTotalPayment, errors.New(errMsg)
 	}
 	if doflg == true {
 		for key, val := range receiverAccount.Assets {
@@ -1417,24 +1562,24 @@ func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Se
 		senderAccountAsBytes, err := json.Marshal(senderAccount)
 		err = stub.PutState(sender, senderAccountAsBytes)
 		if err != nil {
-			return senderBalance, receiverBalance, err
+			return senderBalance, receiverBalance, senderTotalPayment, err
 		}
 	}
 	if receiverBalance >= 0 {
 		receiverAccountAsBytes, err := json.Marshal(receiverAccount)
 		err = stub.PutState(receiver, receiverAccountAsBytes)
 		if err != nil {
-			return senderBalance, receiverBalance, err
+			return senderBalance, receiverBalance, senderTotalPayment, err
 		}
 	}
 
-	return senderBalance, receiverBalance, nil
+	return senderBalance, receiverBalance, senderTotalPayment, nil
 }
 
 func updateTransactionTXHcode(stub shim.ChaincodeStubInterface, TXID string, TXHcode string) error {
 	fmt.Printf("updateTransactionTXHcode: TXID=%s,TXHcode=%s\n", TXID, TXHcode)
 
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	transaction, err := getTransactionStructFromID(stub, TXID)
 	if err != nil {
 		return err
@@ -1442,7 +1587,7 @@ func updateTransactionTXHcode(stub shim.ChaincodeStubInterface, TXID string, TXH
 	transaction.TXHcode = TXHcode
 	transaction.TXStatus = "Cancalled"
 	transaction.TXMemo = "交易更正"
-	transaction.UpdateTime = TimeNow
+	transaction.UpdateTime = TimeNow2
 
 	transactionAsBytes, err := json.Marshal(transaction)
 	if err != nil {
@@ -1457,7 +1602,7 @@ func updateTransactionTXHcode(stub shim.ChaincodeStubInterface, TXID string, TXH
 
 func updateQueuedTransactionTXHcode(stub shim.ChaincodeStubInterface, TXKEY string, TXID string, TXHcode string) error {
 	fmt.Printf("updateQueuedTransactionTXHcode: TXKEY=%s,TXID=%s,TXHcode=%s\n", TXKEY, TXID, TXHcode)
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	queuedTX, err := getQueueStructFromID(stub, TXKEY)
 	if err != nil {
 		return err
@@ -1474,7 +1619,7 @@ func updateQueuedTransactionTXHcode(stub shim.ChaincodeStubInterface, TXKEY stri
 			queuedTX.Transactions[key].TXHcode = TXHcode
 			queuedTX.Transactions[key].TXStatus = "Cancalled"
 			queuedTX.Transactions[key].TXMemo = "交易更正"
-			queuedTX.Transactions[key].UpdateTime = TimeNow
+			queuedTX.Transactions[key].UpdateTime = TimeNow2
 			doflg = true
 			break
 		}
@@ -1496,7 +1641,7 @@ func updateQueuedTransactionTXHcode(stub shim.ChaincodeStubInterface, TXKEY stri
 
 func updateHistoryTransactionTXHcode(stub shim.ChaincodeStubInterface, HTXKEY string, TXID string, TXHcode string) error {
 	fmt.Printf("updateHistoryTransactionTXHcode: HTXKEY=%s,TXID=%s,TXHcode=%s\n", HTXKEY, TXID, TXHcode)
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	historyTX, err := getHistoryTransactionStructFromID(stub, HTXKEY)
 	if err != nil {
 		return err
@@ -1516,7 +1661,7 @@ func updateHistoryTransactionTXHcode(stub shim.ChaincodeStubInterface, HTXKEY st
 			historyTX.Transactions[key].TXStatus = "Cancalled"
 			historyTX.Transactions[key].TXMemo = "交易更正"
 			historyTX.TXStatus[key] = "Cancalled"
-			historyTX.Transactions[key].UpdateTime = TimeNow
+			historyTX.Transactions[key].UpdateTime = TimeNow2
 			doflg = true
 			break
 		}
@@ -1536,16 +1681,18 @@ func updateHistoryTransactionTXHcode(stub shim.ChaincodeStubInterface, HTXKEY st
 	return nil
 }
 
-//peer chaincode invoke -n mycc1 -c '{"Args":["securityCorrectTransfer", "S","004000000001" , "002000000001" , "A07106" , "102000","100000","true","BANK002B00200000000120180606155851"]}' -C myc
+//peer chaincode invoke -n mycc -c '{"Args":["securityCorrectTransfer", "S","004000000001" , "002000000001" , "A07106" , "102000","100000","true","BANK002B00200000000120180606155851"]}' -C myc
 func (s *SmartContract) securityCorrectTransfer(
 	stub shim.ChaincodeStubInterface,
 	args []string) peer.Response {
 
 	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	newTX, isPutInQueue, errMsg := validateCorrectTransaction(stub, args)
 	if errMsg != "" {
 		//return shim.Error(err.Error())
 		newTX.TXErrMsg = errMsg
+		newTX.TXStatus = "Cancalled"
 	}
 	TXIndex := newTX.TXIndex
 	TXSIndex := newTX.TXSIndex
@@ -1566,6 +1713,11 @@ func (s *SmartContract) securityCorrectTransfer(
 	doflg = false
 	TXKEY := SubString(TimeNow, 0, 8) //A0710220180326
 	HTXKEY := "H" + TXKEY
+	TXDAY := SubString(TXID, 18, 8)
+	if TXDAY < TXKEY {
+		TXKEY = TXDAY
+		HTXKEY = "H" + TXKEY
+	}
 	if BankFrom != BankTo {
 		if SecurityAmount == 0 {
 			if TXType == "S" {
@@ -1601,6 +1753,7 @@ func (s *SmartContract) securityCorrectTransfer(
 		if err != nil {
 			//return shim.Error(err.Error())
 			newTX.TXErrMsg = TXKEY + ":QueueID does not exits."
+			newTX.TXStatus = "Cancalled"
 		}
 		queuedTx := QueuedTransaction{}
 		json.Unmarshal(queueAsBytes, &queuedTx)
@@ -1610,6 +1763,7 @@ func (s *SmartContract) securityCorrectTransfer(
 		if err != nil {
 			//return shim.Error(err.Error())
 			newTX.TXErrMsg = TXKEY + ":HistoryID does not exits."
+			newTX.TXStatus = "Cancalled"
 		}
 		historyNewTX := TransactionHistory{}
 		json.Unmarshal(historyAsBytes, &historyNewTX)
@@ -1651,7 +1805,7 @@ func (s *SmartContract) securityCorrectTransfer(
 						queuedTx.Transactions[key].TXStatus = "Cancalled"
 						queuedTx.Transactions[key].TXMemo = "交易更正"
 						queuedTx.Transactions[key].TXHcode = TXID
-						queuedTx.Transactions[key].UpdateTime = TimeNow
+						queuedTx.Transactions[key].UpdateTime = TimeNow2
 						doflg = true
 					}
 					if historyNewTX.Transactions[key].TXStatus == "Pending" {
@@ -1661,7 +1815,7 @@ func (s *SmartContract) securityCorrectTransfer(
 						historyNewTX.Transactions[key].TXStatus = "Cancalled"
 						historyNewTX.Transactions[key].TXMemo = "交易更正"
 						historyNewTX.Transactions[key].TXHcode = TXID
-						historyNewTX.Transactions[key].UpdateTime = TimeNow
+						historyNewTX.Transactions[key].UpdateTime = TimeNow2
 						doflg = true
 					}
 					if doflg == true {
@@ -1672,7 +1826,6 @@ func (s *SmartContract) securityCorrectTransfer(
 			}
 
 			for key, val := range queuedTx.Transactions {
-				//if val.TXIndex == TXIndex && val.TXFrom != TXFrom && val.TXType != TXType {
 				if val.TXIndex == TXIndex && val.TXStatus == TXStatus && val.TXFrom != TXFrom && val.TXType != TXType && val.TXID != TXID {
 					fmt.Println("11.CTXIndex= " + TXIndex + "\n")
 					fmt.Println("12.CTXFrom= " + TXFrom + "\n")
@@ -1682,11 +1835,12 @@ func (s *SmartContract) securityCorrectTransfer(
 					fmt.Println("16.CTXStatus= " + TXStatus + "\n")
 					fmt.Println("17.Cval.TXStatus= " + val.TXStatus + "\n")
 					fmt.Println("18.Cval.TXHcode= " + TXHcode + "\n")
-
 					if TXStatus == "Pending" && val.TXStatus == "Pending" { //if queuedTx.Transactions[key].TXStatus == "Pending" && TXStatus == "Pending" {
 						if doflg == true {
 							//return shim.Error("doflg eq to true")
 							newTX.TXErrMsg = "doflg eq to true"
+							newTX.TXStatus = "Cancalled"
+							break
 						}
 						newTX.MatchedTXID = val.TXID
 						queuedTx.Transactions[key].MatchedTXID = TXID
@@ -1695,6 +1849,8 @@ func (s *SmartContract) securityCorrectTransfer(
 						if err != nil {
 							//return shim.Error(err.Error())
 							newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Matched."
+							newTX.TXStatus = "Cancalled"
+							break
 						}
 						queuedTx.Transactions[key].TXStatus = "Matched"
 						historyNewTX.Transactions[key].TXStatus = "Matched"
@@ -1705,40 +1861,56 @@ func (s *SmartContract) securityCorrectTransfer(
 						newTX.TXMemo = ""
 						if TXType == "S" {
 							//轉出          轉入
-							senderBalance, receiverBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
-							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, TXFrom, TXTo)
-							err = updateBankTotals(stub, TXFrom, SecurityID, Payment, true)
-							if err != nil {
-								//return shim.Error(err.Error())
-								newTX.TXErrMsg = "Failed to execute updateBankTotals TXFrom:" + TXFrom
+							senderBalance, receiverBalance, senderTotalPayment, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
+							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXTo)
+							if BankFrom != BankTo {
+								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
+								if err != nil {
+									//return shim.Error(err.Error())
+									newTX.TXErrMsg = "Failed to execute updateBankTotals TXFrom:" + TXFrom
+									newTX.TXStatus = "Cancalled"
+									break
+								}
+								err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, false)
+								if err != nil {
+									//return shim.Error(err.Error())
+									newTX.TXErrMsg = "Failed to execute updateBankTotals TXTo:" + TXTo
+									newTX.TXStatus = "Cancalled"
+									break
+								}
 							}
-							err = updateBankTotals(stub, TXTo, SecurityID, Payment, false)
-							if err != nil {
-								//return shim.Error(err.Error())
-								newTX.TXErrMsg = "Failed to execute updateBankTotals TXTo:" + TXTo
-							}
-							if (senderBalance < 0) || (receiverBalance < 0) {
+							if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
 								//return shim.Error("TxType=S - senderBalance or receiverBalance <0")
-								newTX.TXErrMsg = "TxType=S - senderBalance or receiverBalance <0"
+								newTX.TXErrMsg = "TxType=S - senderBalance or receiverBalance orsenderTotalPayment <0"
+								newTX.TXStatus = "Cancalled"
+								break
 							}
 						}
 						if TXType == "B" {
 							//轉出          轉入
-							senderBalance, receiverBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
-							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, TXTo, TXFrom)
-							err = updateBankTotals(stub, TXFrom, SecurityID, Payment, true)
-							if err != nil {
-								//return shim.Error(err.Error())
-								newTX.TXErrMsg = "Failed to execute updateBankTotals TXFrom:" + TXFrom
+							senderBalance, receiverBalance, senderTotalPayment, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
+							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
+							if BankFrom != BankTo {
+								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
+								if err != nil {
+									//return shim.Error(err.Error())
+									newTX.TXErrMsg = "Failed to execute updateBankTotals TXFrom:" + TXFrom
+									newTX.TXStatus = "Cancalled"
+									break
+								}
+								err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, false)
+								if err != nil {
+									//return shim.Error(err.Error())
+									newTX.TXErrMsg = "Failed to execute updateBankTotals TXTo:" + TXTo
+									newTX.TXStatus = "Cancalled"
+									break
+								}
 							}
-							err = updateBankTotals(stub, TXTo, SecurityID, Payment, false)
-							if err != nil {
-								//return shim.Error(err.Error())
-								newTX.TXErrMsg = "Failed to execute updateBankTotals TXTo:" + TXTo
-							}
-							if (senderBalance < 0) || (receiverBalance < 0) {
+							if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
 								//return shim.Error("TxType=B - senderBalance or receiverBalance <0")
-								newTX.TXErrMsg = "TxType=B - senderBalance or receiverBalance <0"
+								newTX.TXErrMsg = "TxType=B - senderBalance or receiverBalance or senderTotalPayment <0"
+								newTX.TXStatus = "Cancalled"
+								break
 							}
 						}
 						newTX.IsFrozen = true
@@ -1758,19 +1930,38 @@ func (s *SmartContract) securityCorrectTransfer(
 									if err != nil {
 										//return shim.Error(err.Error())
 										newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Finished."
+										newTX.TXStatus = "Cancalled"
+										break
+									}
+								} else if ApproveFlag == approved2 {
+									queuedTx.Transactions[key].TXStatus = "PaymentError"
+									historyNewTX.Transactions[key].TXStatus = "PaymentError"
+									historyNewTX.TXStatus[key] = "PaymentError"
+									newTX.TXStatus = "PaymentError"
+									queuedTx.Transactions[key].TXMemo = "轉入方款不足"
+									historyNewTX.Transactions[key].TXMemo = "轉入方款不足"
+									newTX.TXMemo = "轉入方款不足"
+									err := updateTransactionStatus(stub, val.TXID, "PaymentError", TXID)
+									if err != nil {
+										//return shim.Error(err.Error())
+										newTX.TXErrMsg = "Failed to execute updateTransactionStatus = PaymentError."
+										newTX.TXStatus = "Cancalled"
+										break
 									}
 								} else {
 									queuedTx.Transactions[key].TXStatus = "Waiting4Payment"
 									historyNewTX.Transactions[key].TXStatus = "Waiting4Payment"
 									historyNewTX.TXStatus[key] = "Waiting4Payment"
 									newTX.TXStatus = "Waiting4Payment"
-									queuedTx.Transactions[key].TXMemo = "等待同資回應"
-									historyNewTX.Transactions[key].TXMemo = "等待同資回應"
-									newTX.TXMemo = "等待同資回應"
+									queuedTx.Transactions[key].TXMemo = "等待回應"
+									historyNewTX.Transactions[key].TXMemo = "等待回應"
+									newTX.TXMemo = "等待回應"
 									err := updateTransactionStatus(stub, val.TXID, "Waiting4Payment", TXID)
 									if err != nil {
 										//return shim.Error(err.Error())
 										newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Waiting4Payment."
+										newTX.TXStatus = "Cancalled"
+										break
 									}
 								}
 							} else {
@@ -1785,6 +1976,8 @@ func (s *SmartContract) securityCorrectTransfer(
 								if err != nil {
 									//return shim.Error(err.Error())
 									newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Finished."
+									newTX.TXStatus = "Cancalled"
+									break
 								}
 							}
 						} else {
@@ -1799,6 +1992,8 @@ func (s *SmartContract) securityCorrectTransfer(
 							if err != nil {
 								//return shim.Error(err.Error())
 								newTX.TXErrMsg = "Failed to execute updateTransactionStatus = Finished."
+								newTX.TXStatus = "Cancalled"
+								break
 							}
 						}
 
@@ -1813,9 +2008,9 @@ func (s *SmartContract) securityCorrectTransfer(
 								newTX.MatchedTXID = val.TXID
 								queuedTx.Transactions[key].MatchedTXID = TXID
 								historyNewTX.Transactions[key].MatchedTXID = TXID
-								newTX.TXMemo = "交易金額疑似有誤"
-								queuedTx.Transactions[key].TXMemo = "交易金額疑似有誤"
-								historyNewTX.Transactions[key].TXMemo = "交易金額疑似有誤"
+								newTX.TXMemo = "交易金額疑輸錯"
+								queuedTx.Transactions[key].TXMemo = "交易金額疑輸錯"
+								historyNewTX.Transactions[key].TXMemo = "交易金額疑輸錯"
 								newTX.TXErrMsg = "SecurityAmount != val.SecurityAmount"
 								queuedTx.Transactions[key].TXErrMsg = "SecurityAmount != val.SecurityAmount"
 								historyNewTX.Transactions[key].TXErrMsg = "SecurityAmount != val.SecurityAmount"
@@ -1823,12 +2018,22 @@ func (s *SmartContract) securityCorrectTransfer(
 								newTX.MatchedTXID = val.TXID
 								queuedTx.Transactions[key].MatchedTXID = TXID
 								historyNewTX.Transactions[key].MatchedTXID = TXID
-								newTX.TXMemo = "交易面額疑似有誤"
-								queuedTx.Transactions[key].TXMemo = "交易面額疑似有誤"
-								historyNewTX.Transactions[key].TXMemo = "交易面額疑似有誤"
+								newTX.TXMemo = "交易面額疑輸錯"
+								queuedTx.Transactions[key].TXMemo = "交易面額疑輸錯"
+								historyNewTX.Transactions[key].TXMemo = "交易面額疑輸錯"
 								newTX.TXErrMsg = "Payment != val.Payment"
 								queuedTx.Transactions[key].TXErrMsg = "Payment != val.Payment"
 								historyNewTX.Transactions[key].TXErrMsg = "Payment != val.Payment"
+							} else if val.TXMemo == "轉出方券不足" && val.TXType == "S" {
+								newTX.MatchedTXID = val.TXID
+								queuedTx.Transactions[key].MatchedTXID = TXID
+								historyNewTX.Transactions[key].MatchedTXID = TXID
+								newTX.TXMemo = "轉出方券不足"
+								queuedTx.Transactions[key].TXMemo = "轉出方券不足"
+								historyNewTX.Transactions[key].TXMemo = "轉出方券不足"
+								newTX.TXErrMsg = val.TXFrom + ":" + val.TXErrMsg
+								queuedTx.Transactions[key].TXErrMsg = val.TXFrom + ":" + val.TXErrMsg
+								historyNewTX.Transactions[key].TXErrMsg = val.TXFrom + ":" + val.TXErrMsg
 							}
 						}
 					}
@@ -1881,7 +2086,9 @@ func (s *SmartContract) securityCorrectTransfer(
 func validateCorrectTransaction(
 	stub shim.ChaincodeStubInterface,
 	args []string) (Transaction, bool, string) {
+
 	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	var err error
 	var TXData1, TXData2, TXIndex, TXSIndex, TXID string
 	//TimeNow := time.Now().Format(timelayout)
@@ -1892,8 +2099,8 @@ func validateCorrectTransaction(
 	transaction.TXErrMsg = ""
 	transaction.TXHcode = ""
 	transaction.IsFrozen = false
-	transaction.CreateTime = TimeNow
-	transaction.UpdateTime = TimeNow
+	transaction.CreateTime = TimeNow2
+	transaction.UpdateTime = TimeNow2
 	fmt.Println("TimeNow is %s", TimeNow)
 
 	err = checkArgArrayLength(args, 8)
@@ -1996,18 +2203,22 @@ func validateCorrectTransaction(
 	}
 	transaction.TXIndex = TXIndex
 	transaction.TXSIndex = TXSIndex
-	balance, position, err := checkAccountBalance(stub, SecurityID, Payment, TXFrom, TXType)
-	if err != nil {
+	balance, position, securityamount, totalpayment, errMsg := checkAccountBalance(stub, SecurityID, Payment, TXFrom, TXType)
+	if errMsg != "" && TXType == "S" {
 		//return transaction, false, err
-		transaction.TXMemo = "券不足"
-		transaction.TXErrMsg = TXFrom + ":Payment > Balance"
+		transaction.TXMemo = "轉出方券不足"
+		//transaction.TXErrMsg = TXFrom + ":Payment > Balance"
+		transaction.TXErrMsg = errMsg
 		fmt.Printf("Payment: %s\n", Payment)
 		fmt.Printf("balance: %s\n", balance)
 		fmt.Printf("position: %s\n", position)
-		return transaction, false, TXFrom + ":Payment > Balance"
+		fmt.Printf("securityamount: %s\n", securityamount)
+		return transaction, false, errMsg
 	}
 	transaction.TXFromBalance = balance
 	transaction.TXFromPosition = position
+	transaction.TXFromAmount = securityamount
+	transaction.TXFromTotalPayment = totalpayment
 	transaction.TXHcode = TXID
 	transaction.TXStatus = "Pending"
 
@@ -2026,9 +2237,9 @@ func validateCorrectTransaction(
 func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string) (string, error) {
 	var MatchedTXID string
 	MatchedTXID = ""
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	transaction, err := getTransactionStructFromID(stub, TXID)
-	if transaction.TXStatus != "Pending" && transaction.TXStatus != "Waiting4Payment" {
+	if transaction.TXStatus != "Pending" && transaction.TXStatus != "Waiting4Payment" && transaction.TXStatus != "PaymentError" {
 		return MatchedTXID, errors.New("Failed to find Transaction Pending OR Waiting4Payment TXStatus")
 	}
 	TXStatus := transaction.TXStatus
@@ -2036,13 +2247,16 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 	if TXStatus == "Waiting4Payment" {
 		TXMemo = "日終交易取消"
 	}
+	if TXStatus == "PaymentError" {
+		TXMemo = "轉入方款不足"
+	}
 	if TXStatus == "Pending" {
 		TXMemo = "尚未比對"
 	}
 
 	transaction.TXStatus = "Cancalled"
 	transaction.TXMemo = TXMemo
-	transaction.UpdateTime = TimeNow
+	transaction.UpdateTime = TimeNow2
 	transactionAsBytes, err := json.Marshal(transaction)
 	if err != nil {
 		return MatchedTXID, err
@@ -2051,14 +2265,13 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 	if err != nil {
 		return MatchedTXID, err
 	}
-	if TXStatus == "Waiting4Payment" {
+	if (TXStatus == "Waiting4Payment") || (TXStatus == "PaymentError") {
 		MatchedTXID = transaction.MatchedTXID
-		TXMemo = "日終交易取消"
 		transaction2, _ := getTransactionStructFromID(stub, MatchedTXID)
 		if transaction2 != nil {
 			transaction2.TXStatus = "Cancalled"
 			transaction2.TXMemo = TXMemo
-			transaction2.UpdateTime = TimeNow
+			transaction2.UpdateTime = TimeNow2
 			transaction2AsBytes, err := json.Marshal(transaction2)
 			if err != nil {
 				return MatchedTXID, err
@@ -2075,38 +2288,42 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 		Payment := transaction.Payment
 		TXFrom := transaction.TXFrom
 		TXTo := transaction.TXTo
-		//BankFrom := SubString(transaction.TXFrom, 0, 3)
-		//BankTo := SubString(transaction.TXTo, 0, 3)
+		BankFrom := transaction.BankFrom
+		BankTo := transaction.TXTo
 
 		if TXType == "S" {
-			senderBalance, receiverBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
-			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, TXFrom, TXTo)
-			err = updateBankTotals(stub, TXFrom, SecurityID, Payment, false)
-			if err != nil {
-				return MatchedTXID, err
+			senderBalance, receiverBalance, senderTotalPayment, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
+			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXTo)
+			if BankFrom != BankTo {
+				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
+				if err != nil {
+					return MatchedTXID, err
+				}
+				err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, true)
+				if err != nil {
+					return MatchedTXID, err
+				}
 			}
-			err = updateBankTotals(stub, TXTo, SecurityID, Payment, true)
-			if err != nil {
-				return MatchedTXID, err
-			}
-			if (senderBalance < 0) || (receiverBalance < 0) {
-				return MatchedTXID, errors.New("senderBalance,receiverBalance <0")
+			if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
+				return MatchedTXID, errors.New("senderBalance,receiverBalance,senderTotalPayment <0")
 			}
 
 		}
 		if TXType == "B" {
-			senderBalance, receiverBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
-			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, TXTo, TXFrom)
-			err = updateBankTotals(stub, TXFrom, SecurityID, Payment, false)
-			if err != nil {
-				return MatchedTXID, err
+			senderBalance, receiverBalance, senderTotalPayment, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
+			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
+			if BankFrom != BankTo {
+				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
+				if err != nil {
+					return MatchedTXID, err
+				}
+				err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, true)
+				if err != nil {
+					return MatchedTXID, err
+				}
 			}
-			err = updateBankTotals(stub, TXTo, SecurityID, Payment, true)
-			if err != nil {
-				return MatchedTXID, err
-			}
-			if (senderBalance < 0) || (receiverBalance < 0) {
-				return MatchedTXID, errors.New("senderBalance,receiverBalance <0")
+			if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
+				return MatchedTXID, errors.New("senderBalance,receiverBalance,senderTotalPayment <0")
 			}
 
 		}
@@ -2117,7 +2334,7 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 
 func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY string, TXID string, MatchedTXID string) error {
 
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	queuedTX, err := getQueueStructFromID(stub, TXKEY)
 	if err != nil {
 		return err
@@ -2135,6 +2352,9 @@ func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY
 		if TXStatus == "Waiting4Payment" {
 			TXMemo = "日終交易取消"
 		}
+		if TXStatus == "PaymentError" {
+			TXMemo = "轉入方款不足"
+		}
 		if TXStatus == "Pending" {
 			TXMemo = "尚未比對"
 		}
@@ -2143,10 +2363,10 @@ func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY
 			fmt.Printf("qkey2: %d\n", key)
 			fmt.Printf("qval2: %s\n", val)
 
-			if (queuedTX.Transactions[key].TXStatus == "Pending") || (queuedTX.Transactions[key].TXStatus == "Waiting4Payment") {
+			if (queuedTX.Transactions[key].TXStatus == "Pending") || (queuedTX.Transactions[key].TXStatus == "Waiting4Payment") || (queuedTX.Transactions[key].TXStatus == "PaymentError") {
 				queuedTX.Transactions[key].TXStatus = "Cancalled"
 				queuedTX.Transactions[key].TXMemo = TXMemo
-				queuedTX.Transactions[key].UpdateTime = TimeNow
+				queuedTX.Transactions[key].UpdateTime = TimeNow2
 				doflg = true
 			}
 		}
@@ -2154,16 +2374,16 @@ func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY
 			fmt.Printf("qkey3: %d\n", key)
 			fmt.Printf("qval3: %s\n", val)
 
-			if (queuedTX.Transactions[key].TXStatus == "Pending") || (queuedTX.Transactions[key].TXStatus == "Waiting4Payment") {
+			if (queuedTX.Transactions[key].TXStatus == "Pending") || (queuedTX.Transactions[key].TXStatus == "Waiting4Payment") || (queuedTX.Transactions[key].TXStatus == "PaymentError") {
 				queuedTX.Transactions[key].TXStatus = "Cancalled"
 				queuedTX.Transactions[key].TXMemo = TXMemo
-				queuedTX.Transactions[key].UpdateTime = TimeNow
+				queuedTX.Transactions[key].UpdateTime = TimeNow2
 				doflg = true
 			}
 		}
 	}
 	if doflg != true {
-		return errors.New("Failed to find Queued Pending OR Waiting4Payment TXStatus ")
+		return errors.New("Failed to find Queued Pending OR Waiting4Payment OR PaymentError TXStatus ")
 	}
 
 	queuedAsBytes, err := json.Marshal(queuedTX)
@@ -2179,7 +2399,7 @@ func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY
 
 func updateEndDayHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXKEY string, TXID string, MatchedTXID string) error {
 
-	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	historyTX, err := getHistoryTransactionStructFromID(stub, HTXKEY)
 	if err != nil {
 		return err
@@ -2197,6 +2417,9 @@ func updateEndDayHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXK
 		if TXStatus == "Waiting4Payment" {
 			TXMemo = "日終交易取消"
 		}
+		if TXStatus == "PaymentError" {
+			TXMemo = "轉入方款不足"
+		}
 		if TXStatus == "Pending" {
 			TXMemo = "尚未比對"
 		}
@@ -2204,10 +2427,10 @@ func updateEndDayHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXK
 		if val == TXID {
 			fmt.Printf("hkey2: %d\n", key)
 			fmt.Printf("hval2: %s\n", val)
-			if historyTX.Transactions[key].TXStatus == "Pending" || historyTX.Transactions[key].TXStatus == "Waiting4Payment" {
+			if (historyTX.Transactions[key].TXStatus == "Pending") || (historyTX.Transactions[key].TXStatus == "Waiting4Payment") || (historyTX.Transactions[key].TXStatus == "PaymentError") {
 				historyTX.Transactions[key].TXStatus = "Cancalled"
 				historyTX.Transactions[key].TXMemo = TXMemo
-				historyTX.Transactions[key].UpdateTime = TimeNow
+				historyTX.Transactions[key].UpdateTime = TimeNow2
 				historyTX.TXStatus[key] = "Cancalled"
 				doflg = true
 			}
@@ -2215,10 +2438,10 @@ func updateEndDayHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXK
 		if val == MatchedTXID {
 			fmt.Printf("hkey3: %d\n", key)
 			fmt.Printf("hval3: %s\n", val)
-			if historyTX.Transactions[key].TXStatus == "Pending" || historyTX.Transactions[key].TXStatus == "Waiting4Payment" {
+			if (historyTX.Transactions[key].TXStatus == "Pending") || (historyTX.Transactions[key].TXStatus == "Waiting4Payment") || (historyTX.Transactions[key].TXStatus == "PaymentError") {
 				historyTX.Transactions[key].TXStatus = "Cancalled"
 				historyTX.Transactions[key].TXMemo = TXMemo
-				historyTX.Transactions[key].UpdateTime = TimeNow
+				historyTX.Transactions[key].UpdateTime = TimeNow2
 				historyTX.TXStatus[key] = "Cancalled"
 				doflg = true
 			}
@@ -2280,7 +2503,7 @@ func (s *SmartContract) queryTXKEYTransactions(APIstub shim.ChaincodeStubInterfa
 	return shim.Success(QueuedTXAsBytes)
 }
 
-//peer chaincode query -n mycc1 -c '{"Args":["queryHistoryTXKEYTransactions", "H20180408"]}' -C myc
+//peer chaincode query -n mycc -c '{"Args":["queryHistoryTXKEYTransactions", "H20180408"]}' -C myc
 func (s *SmartContract) queryHistoryTXKEYTransactions(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
 
 	if len(args) != 1 {
@@ -2431,7 +2654,7 @@ func (s *SmartContract) getHistoryTXIDForTransaction(APIstub shim.ChaincodeStubI
 	return shim.Success(buffer.Bytes())
 }
 
-//peer chaincode query -n mycc3 -c '{"Args":["getHistoryForQueuedTransaction", "H20180415"]}' -C myc
+//peer chaincode query -n mycc -c '{"Args":["getHistoryForQueuedTransaction", "H20180415"]}' -C myc
 
 func (s *SmartContract) getHistoryForQueuedTransaction(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
 
@@ -2663,7 +2886,7 @@ func (s *SmartContract) queryAllQueuedTransactions(APIstub shim.ChaincodeStubInt
 	return shim.Success(buffer.Bytes())
 }
 
-//peer chaincode query -n mycc3 -c '{"Args":["queryAllHistoryTransactions", "20180415","20180416"]}' -C myc -v 1.0
+//peer chaincode query -n mycc -c '{"Args":["queryAllHistoryTransactions", "20180415","20180416"]}' -C myc -v 1.0
 func (s *SmartContract) queryAllHistoryTransactions(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
 
 	if len(args) != 2 {
@@ -2763,11 +2986,12 @@ func (s *SmartContract) queryAllTransactionKeys(APIstub shim.ChaincodeStubInterf
 //peer chaincode query -n mycc -c '{"Args":["queryQueuedTransactionStatus","20180609","Finished"]}' -C myc
 func (s *SmartContract) queryQueuedTransactionStatus(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
 
-	if len(args) != 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
+	if len(args) != 3 {
+		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
 	TXKEY := args[0]
 	TXStatus := args[1]
+	BankID := args[2]
 
 	QueuedAsBytes, _ := APIstub.GetState(TXKEY)
 	QueuedTX := QueuedTransaction{}
@@ -2784,7 +3008,7 @@ func (s *SmartContract) queryQueuedTransactionStatus(APIstub shim.ChaincodeStubI
 	buffer.WriteString(",\"Transactions\":[")
 	bArrayMemberAlreadyWritten := false
 	for key, val := range QueuedTX.Transactions {
-		if val.TXStatus == TXStatus || TXStatus == "All" {
+		if (val.TXStatus == TXStatus || TXStatus == "All") && (val.BankFrom == BankID || val.BankTo == BankID || BankID == "All") {
 			// Add a comma before array members, suppress it for the first array member
 			if bArrayMemberAlreadyWritten == true {
 				buffer.WriteString(",")
@@ -2885,11 +3109,12 @@ func (s *SmartContract) queryQueuedTransactionStatus(APIstub shim.ChaincodeStubI
 //peer chaincode query -n mycc -c '{"Args":["queryHistoryTransactionStatus","H20180609","Finished"]}' -C myc
 func (s *SmartContract) queryHistoryTransactionStatus(APIstub shim.ChaincodeStubInterface, args []string) peer.Response {
 
-	if len(args) != 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
+	if len(args) != 3 {
+		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
 	HTXKEY := args[0]
 	TXStatus := args[1]
+	BankID := args[2]
 
 	HistoryAsBytes, _ := APIstub.GetState(HTXKEY)
 	HistoryTX := TransactionHistory{}
@@ -2905,8 +3130,8 @@ func (s *SmartContract) queryHistoryTransactionStatus(APIstub shim.ChaincodeStub
 	buffer.WriteString("\"")
 	buffer.WriteString(",\"Transactions\":[")
 	bArrayMemberAlreadyWritten := false
-	for key, val := range HistoryTX.TXStatus {
-		if val == TXStatus || TXStatus == "All" {
+	for key, val := range HistoryTX.Transactions {
+		if (val.TXStatus == TXStatus || TXStatus == "All") && (val.BankFrom == BankID || val.BankTo == BankID || BankID == "All") {
 			if bArrayMemberAlreadyWritten == true {
 				buffer.WriteString(",")
 			}
