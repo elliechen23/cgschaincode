@@ -1118,7 +1118,21 @@ func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, B
 	doflg = false
 	for key, val := range Security.Owners {
 		if val.OwnedAccountID == sender {
+			if Security.Owners[key].OwnedBalance < Balance {
+				errMsg := fmt.Sprintf(
+					"Error: This OwnedAccountID of OwnedBalance<Balance (%s)",
+					sender)
+				return senderBalance, receiverBalance, errors.New(errMsg)
+				break
+			}
 			Security.Owners[key].OwnedBalance -= Balance
+			if Security.Owners[key].OwnedAmount < Amount {
+				errMsg := fmt.Sprintf(
+					"Error: This OwnedAccountID of OwnedAmount<Amount (%s)",
+					sender)
+				return senderBalance, receiverBalance, errors.New(errMsg)
+				break
+			}
 			Security.Owners[key].OwnedAmount -= Amount
 			senderBalance = Security.Owners[key].OwnedBalance
 			doflg = true
@@ -1200,7 +1214,21 @@ func resetSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Ba
 			doflg = true
 		}
 		if val.OwnedAccountID == receiver {
+			if Security.Owners[key].OwnedBalance < Balance {
+				errMsg := fmt.Sprintf(
+					"Error: This OwnedAccountID of OwnedBalance<Balance (%s)",
+					sender)
+				return senderBalance, receiverBalance, errors.New(errMsg)
+				break
+			}
 			Security.Owners[key].OwnedBalance -= Balance
+			if Security.Owners[key].OwnedAmount < Amount {
+				errMsg := fmt.Sprintf(
+					"Error: This OwnedAccountID of OwnedAmount<Amount (%s)",
+					sender)
+				return senderBalance, receiverBalance, errors.New(errMsg)
+				break
+			}
 			Security.Owners[key].OwnedAmount -= Amount
 			receiverBalance = Security.Owners[key].OwnedBalance
 			doflg = true
