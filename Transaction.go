@@ -969,17 +969,17 @@ func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 			fmt.Printf("1.checkAccountBalance: SecurityID=%d\n", SecurityID)
 
 			if TXType == "S" {
-				if (Payment > Balance) || (Payment > Position) {
+				if Payment > Balance {
 					errMsg := fmt.Sprintf(
 						"Error: Payment: (%s)  > Balance: (%s)",
 						strconv.FormatInt(Payment, 10),
 						strconv.FormatInt(Balance, 10))
 					return Balance, Position, SecurityAmount, TotalPayment, errMsg
-				} else if (TotalPayment > Balance) || (TotalPayment > Position) {
+				} else if Payment > Position {
 					errMsg := fmt.Sprintf(
-						"Error: TotalPayment: (%s)  > Balance: (%s)",
-						strconv.FormatInt(TotalPayment, 10),
-						strconv.FormatInt(Balance, 10))
+						"Error: Payment: (%s)  > Position: (%s)",
+						strconv.FormatInt(Payment, 10),
+						strconv.FormatInt(Position, 10))
 					return Balance, Position, SecurityAmount, TotalPayment, errMsg
 				}
 			}

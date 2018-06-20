@@ -814,7 +814,7 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 			Security.SecurityTotals[key].TotalInterest += newOwnedInterest
 			Security.SecurityTotals[key].DurationInterest = Security.SecurityTotals[key].TotalInterest / int64(Security.RepayPeriod)
 			Security.SecurityTotals[key].PaidDurationInterest = PaidDurationInterest
-			Security.SecurityTotals[key].UpdateTime = TimeNow
+			Security.SecurityTotals[key].UpdateTime = TimeNow2
 			doflg = true
 			break
 		}
@@ -1383,6 +1383,7 @@ func (s *SmartContract) changeBankSecurityTotals(APIstub shim.ChaincodeStubInter
 		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
 	TimeNow := time.Now().Format(timelayout)
+	TimeNow2 := time.Now().Format(timelayout2)
 	Today := SubString(TimeNow, 0, 8)
 
 	SecurityID := args[0]
@@ -1476,7 +1477,7 @@ func (s *SmartContract) changeBankSecurityTotals(APIstub shim.ChaincodeStubInter
 				Security.SecurityTotals[key].TotalInterest = newOwnedInterest
 				Security.SecurityTotals[key].DurationInterest = Security.SecurityTotals[key].TotalInterest / int64(Security.RepayPeriod)
 				Security.SecurityTotals[key].PaidDurationInterest = PaidDurationInterest
-				Security.SecurityTotals[key].UpdateTime = TimeNow
+				Security.SecurityTotals[key].UpdateTime = TimeNow2
 			}
 		}
 	}
