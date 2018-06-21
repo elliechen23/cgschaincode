@@ -680,11 +680,11 @@ func (s *SmartContract) changeSecurity(APIstub shim.ChaincodeStubInterface, args
 	if err != nil {
 		return shim.Error(err.Error())
 	}
-	newAvaliable, err = strconv.Atoi(args[10])
+	newOwnedAmount, err = strconv.ParseInt(args[10], 10, 64)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
-	newOwnedAmount, err = strconv.ParseInt(args[11], 10, 64)
+	newAvaliable, err = strconv.Atoi(args[11])
 	if err != nil {
 		return shim.Error(err.Error())
 	}

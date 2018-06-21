@@ -32,31 +32,31 @@ const approved3 string = "3"   //系統錯誤，Cancalled
 const approved5 string = "5"   //自動檢核Account的SecurityAmount
 
 type Transaction struct {
-	ObjectType         string `json:"docType"`            // default set to "Transaction"
-	TXID               string `json:"TXID"`               // Transaction ID
-	TXType             string `json:"TXType"`             // Transaction TXType BUY or SELL
-	TXFrom             string `json:"TXFrom"`             // Transaction from
-	TXTo               string `json:"TXTo"`               // Transaction to
-	BankFrom           string `json:"BankFrom"`           // Bank from
-	BankTo             string `json:"BankTo"`             // Bank to
-	SecurityID         string `json:"SecurityID"`         // SecurityID
-	SecurityAmount     int64  `json:"SecurityAmount"`     // SecurityAmount
-	Payment            int64  `json:"Payment"`            // Payment
-	isPutToQueue       bool   `json:"isPutToQueue"`       // isPutToQueue = true 代表資料檢核成功
-	TXStatus           string `json:"TXStatus"`           // Pending, Matched, Finished, Cancalled, PaymentError,
-	IsFrozen           bool   `json:"isFrozen"`           //是否有圈存
-	CreateTime         string `json:"createTime"`         //建立時間
-	UpdateTime         string `json:"updateTime"`         //更新時間
-	TXIndex            string `json:"TXIndex"`            // Transaction Index(全部比對)
-	TXSIndex           string `json:"TXSIndex"`           // Transaction Short Index(沒有比對SecurityAmount,Payment，用來判斷金額或面額錯輸)
-	TXHcode            string `json:"TXHcode"`            // Transaction Hcode(更正交易序號)
-	TXFromBalance      int64  `json:"TXFromBalance"`      //未交易前的帳戶券數
-	TXFromPosition     int64  `json:"TXFromPosition"`     //未交易前的帳戶券數
-	TXFromAmount       int64  `json:"TXFromAmount"`       //未交易前的帳戶款數
-	TXFromTotalPayment int64  `json:"TXFromTotalPayment"` //未交易前的帳戶總交易券數
-	MatchedTXID        string `json:"MatchedTXID"`        //比對序號
-	TXMemo             string `json:"TXMemo"`             //交易說明
-	TXErrMsg           string `json:"TXErrMsg"`           //交易錯誤說明
+	ObjectType           string `json:"docType"`              // default set to "Transaction"
+	TXID                 string `json:"TXID"`                 // Transaction ID
+	TXType               string `json:"TXType"`               // Transaction TXType BUY or SELL
+	TXFrom               string `json:"TXFrom"`               // Transaction from
+	TXTo                 string `json:"TXTo"`                 // Transaction to
+	BankFrom             string `json:"BankFrom"`             // Bank from
+	BankTo               string `json:"BankTo"`               // Bank to
+	SecurityID           string `json:"SecurityID"`           // SecurityID
+	SecurityAmount       int64  `json:"SecurityAmount"`       // SecurityAmount
+	Payment              int64  `json:"Payment"`              // Payment
+	isPutToQueue         bool   `json:"isPutToQueue"`         // isPutToQueue = true 代表資料檢核成功
+	TXStatus             string `json:"TXStatus"`             // Pending, Matched, Finished, Cancalled, PaymentError,
+	IsFrozen             bool   `json:"isFrozen"`             //是否有圈存
+	CreateTime           string `json:"createTime"`           //建立時間
+	UpdateTime           string `json:"updateTime"`           //更新時間
+	TXIndex              string `json:"TXIndex"`              // Transaction Index(全部比對)
+	TXSIndex             string `json:"TXSIndex"`             // Transaction Short Index(沒有比對SecurityAmount,Payment，用來判斷金額或面額錯輸)
+	TXHcode              string `json:"TXHcode"`              // Transaction Hcode(更正交易序號)
+	TXFromBalance        int64  `json:"TXFromBalance"`        //未交易前的帳戶券數
+	TXFromPosition       int64  `json:"TXFromPosition"`       //未交易前的帳戶券數
+	TXFromAmount         int64  `json:"TXFromAmount"`         //未交易前的帳戶款數
+	TXFromPendingBalance int64  `json:"TXFromPendingBalance"` //未交易前的帳戶尚未比對券數
+	MatchedTXID          string `json:"MatchedTXID"`          //比對序號
+	TXMemo               string `json:"TXMemo"`               //交易說明
+	TXErrMsg             string `json:"TXErrMsg"`             //交易錯誤說明
 }
 
 /*
@@ -202,7 +202,7 @@ func (s *SmartContract) submitApproveTransaction(
 		}
 
 		if TXType == "S" {
-			senderBalance, receiverBalance, senderTotalPayment, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
+			senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
 			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXTo)
 			if BankFrom != BankTo {
 				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
@@ -214,13 +214,13 @@ func (s *SmartContract) submitApproveTransaction(
 					return shim.Error(err.Error())
 				}
 			}
-			if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
-				return shim.Error("senderBalance,receiverBalance,senderTotalPayment <0")
+			if (senderBalance < 0) || (receiverBalance < 0) || (senderPendingBalance < 0) || (receiverPendingBalance < 0) {
+				return shim.Error("senderBalance,receiverBalance,senderPendingBalance,receiverPendingBalance <0")
 			}
 
 		}
 		if TXType == "B" {
-			senderBalance, receiverBalance, senderTotalPayment, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
+			senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
 			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
 			if BankFrom != BankTo {
 				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
@@ -232,8 +232,8 @@ func (s *SmartContract) submitApproveTransaction(
 					return shim.Error(err.Error())
 				}
 			}
-			if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
-				return shim.Error("senderBalance,receiverBalance,senderTotalPayment <0")
+			if (senderBalance < 0) || (receiverBalance < 0) || (senderPendingBalance < 0) || (receiverPendingBalance < 0) {
+				return shim.Error("senderBalance,receiverBalance,senderPendingBalance,receiverPendingBalance <0")
 			}
 
 		}
@@ -471,7 +471,7 @@ func (s *SmartContract) securityTransfer(
 						newTX.TXMemo = ""
 						if TXType == "S" {
 							//轉出          轉入
-							senderBalance, receiverBalance, senderTotalPayment, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
+							senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
 							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXTo)
 							if BankFrom != BankTo {
 								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
@@ -489,9 +489,9 @@ func (s *SmartContract) securityTransfer(
 									break
 								}
 							}
-							if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
+							if (senderBalance < 0) || (receiverBalance < 0) || (senderPendingBalance < 0) || (receiverPendingBalance < 0) {
 								//return shim.Error("TxType=S - senderBalance or receiverBalance <0")
-								newTX.TXErrMsg = "TxType=S - senderBalance or receiverBalance or senderTotalPayment <0"
+								newTX.TXErrMsg = "TxType=S - senderBalance or receiverBalance or senderPendingBalance or receiverPendingBalance <0"
 								newTX.TXStatus = "Cancalled"
 								break
 							}
@@ -499,7 +499,7 @@ func (s *SmartContract) securityTransfer(
 						}
 						if TXType == "B" {
 							//轉出          轉入
-							senderBalance, receiverBalance, senderTotalPayment, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
+							senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
 							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
 							if BankFrom != BankTo {
 								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
@@ -517,9 +517,9 @@ func (s *SmartContract) securityTransfer(
 									break
 								}
 							}
-							if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
+							if (senderBalance < 0) || (receiverBalance < 0) || (senderPendingBalance < 0) || (receiverPendingBalance < 0) {
 								//return shim.Error("TxType=B - senderBalance or receiverBalance <0")
-								newTX.TXErrMsg = "TxType=B - senderBalance or receiverBalance or senderTotalPayment <0"
+								newTX.TXErrMsg = "TxType=B - senderBalance or receiverBalance or PendingBalance <0"
 								newTX.TXStatus = "Cancalled"
 								break
 							}
@@ -550,9 +550,9 @@ func (s *SmartContract) securityTransfer(
 									historyNewTX.Transactions[key].TXStatus = "PaymentError"
 									historyNewTX.TXStatus[key] = "PaymentError"
 									newTX.TXStatus = "PaymentError"
-									queuedTx.Transactions[key].TXMemo = "轉入方款不足"
-									historyNewTX.Transactions[key].TXMemo = "轉入方款不足"
-									newTX.TXMemo = "轉入方款不足"
+									queuedTx.Transactions[key].TXMemo = "款不足等待補款"
+									historyNewTX.Transactions[key].TXMemo = "款不足等待補款"
+									newTX.TXMemo = "款不足等待補款"
 									err := updateTransactionStatus(stub, val.TXID, "PaymentError", TXID)
 									if err != nil {
 										//return shim.Error(err.Error())
@@ -570,9 +570,9 @@ func (s *SmartContract) securityTransfer(
 										historyNewTX.Transactions[key].TXStatus = "PaymentError"
 										historyNewTX.TXStatus[key] = "PaymentError"
 										newTX.TXStatus = "PaymentError"
-										queuedTx.Transactions[key].TXMemo = "轉入方款不足"
-										historyNewTX.Transactions[key].TXMemo = "轉入方款不足"
-										newTX.TXMemo = "轉入方款不足"
+										queuedTx.Transactions[key].TXMemo = "款不足等待補款"
+										historyNewTX.Transactions[key].TXMemo = "款不足等待補款"
+										newTX.TXMemo = "款不足等待補款"
 										err := updateTransactionStatus(stub, val.TXID, "PaymentError", TXID)
 										if err != nil {
 											//return shim.Error(err.Error())
@@ -821,21 +821,39 @@ func validateTransaction(
 		return transaction, false, "Payment must be a positive value"
 	}
 	transaction.Payment = Payment
+	senderPendingBalance, receiverPendingBalance, errMsg := updateAccountPendingBalance(stub, SecurityID, Payment, TXFrom, TXTo)
+	if errMsg != "" {
+		return transaction, true, errMsg
+	}
+	if senderPendingBalance <= 0 {
+		return transaction, true, "senderPendingBalance less equle to zero."
+	}
+	if receiverPendingBalance <= 0 {
+		return transaction, true, "receiverPendingBalance less equle to zero."
+	}
+
 	if TXType == "S" {
 		TXData1 = BankFrom + TXFrom + BankTo + TXTo + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
 		TXIndex = getSHA256(TXData1)
 		TXData2 = BankFrom + TXFrom + BankTo + TXTo + SecurityID
 		TXSIndex = getSHA256(TXData2)
+		transaction.TXFromPendingBalance = senderPendingBalance
 	}
+
 	if TXType == "B" {
 		TXData1 = BankTo + TXTo + BankFrom + TXFrom + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
 		TXIndex = getSHA256(TXData1)
 		TXData2 = BankTo + TXTo + BankFrom + TXFrom + SecurityID
 		TXSIndex = getSHA256(TXData2)
+		transaction.TXFromPendingBalance = receiverPendingBalance
 	}
+
 	transaction.TXIndex = TXIndex
 	transaction.TXSIndex = TXSIndex
-	balance, position, securityamount, totalpayment, errMsg := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType)
+	balance, position, securityamount, pendingbalance, errMsg := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType)
+	transaction.TXFromBalance = balance
+	transaction.TXFromPosition = position
+	transaction.TXFromAmount = securityamount
 	if errMsg != "" && TXType == "S" {
 		transaction.TXMemo = "轉出方券不足"
 		//transaction.TXErrMsg = TXFrom + ":Payment > Balance"
@@ -844,15 +862,12 @@ func validateTransaction(
 		fmt.Printf("balance: %s\n", balance)
 		fmt.Printf("position: %s\n", position)
 		fmt.Printf("securityamount: %s\n", securityamount)
-		fmt.Printf("totalpayment: %s\n", totalpayment)
-		return transaction, false, errMsg
+		fmt.Printf("pendingbalance: %s\n", pendingbalance)
+		return transaction, true, errMsg
 	}
-	transaction.TXFromBalance = balance
-	transaction.TXFromPosition = position
-	transaction.TXFromAmount = securityamount
-	transaction.TXFromTotalPayment = totalpayment
+
 	transaction.TXStatus = "Pending"
-	return transaction, isPutToQueue, ""
+	return transaction, true, ""
 
 }
 
@@ -979,13 +994,13 @@ func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 	var Balance int64
 	var Position int64
 	var SecurityAmount int64
-	var TotalPayment int64
+	var PendingBalance int64
 	Balance = 0
 	Position = 0
 	SecurityAmount = 0
-	TotalPayment = 0
+	PendingBalance = 0
 	if err != nil {
-		return Balance, Position, SecurityAmount, TotalPayment, "getAccountStructFromID error:" + sender
+		return Balance, Position, SecurityAmount, PendingBalance, "getAccountStructFromID error:" + sender
 	}
 	//if TXType != "S" {
 	//	return Balance, Position, SecurityAmount, TotalPayment, "TXType is not equle to S."
@@ -997,11 +1012,11 @@ func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 			SecurityAmount = senderAccount.Assets[key].SecurityAmount
 			Balance = senderAccount.Assets[key].Balance
 			Position = senderAccount.Assets[key].Position
-			TotalPayment = senderAccount.Assets[key].TotalPayment
+			PendingBalance = senderAccount.Assets[key].PendingBalance
 			fmt.Printf("1.checkAccountBalance: SecurityAmount=%d\n", SecurityAmount)
 			fmt.Printf("1.checkAccountBalance: Balance=%d\n", Balance)
 			fmt.Printf("1.checkAccountBalance: Position=%d\n", Position)
-			fmt.Printf("1.checkAccountBalance: TotalPayment=%d\n", TotalPayment)
+			fmt.Printf("1.checkAccountBalance: PendingBalance=%d\n", PendingBalance)
 			fmt.Printf("1.checkAccountBalance: SecurityID=%d\n", SecurityID)
 
 			if TXType == "S" {
@@ -1010,19 +1025,25 @@ func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 						"Error: Payment: (%s)  > Balance: (%s)",
 						strconv.FormatInt(Payment, 10),
 						strconv.FormatInt(Balance, 10))
-					return Balance, Position, SecurityAmount, TotalPayment, errMsg
+					return Balance, Position, SecurityAmount, PendingBalance, errMsg
 				} else if Payment > Position {
 					errMsg := fmt.Sprintf(
 						"Error: Payment: (%s)  > Position: (%s)",
 						strconv.FormatInt(Payment, 10),
 						strconv.FormatInt(Position, 10))
-					return Balance, Position, SecurityAmount, TotalPayment, errMsg
+					return Balance, Position, SecurityAmount, PendingBalance, errMsg
 				} else if Amount > SecurityAmount {
 					errMsg := fmt.Sprintf(
 						"Error: Amount: (%s)  > SecurityAmount: (%s)",
 						strconv.FormatInt(Amount, 10),
 						strconv.FormatInt(SecurityAmount, 10))
-					return Balance, Position, SecurityAmount, TotalPayment, errMsg
+					return Balance, Position, SecurityAmount, PendingBalance, errMsg
+				} else if Payment > PendingBalance {
+					errMsg := fmt.Sprintf(
+						"Error: Payment: (%s)  > PendingBalance: (%s)",
+						strconv.FormatInt(Payment, 10),
+						strconv.FormatInt(PendingBalance, 10))
+					return Balance, Position, SecurityAmount, PendingBalance, errMsg
 				}
 			}
 			doflg = true
@@ -1033,20 +1054,21 @@ func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 		errMsg := fmt.Sprintf(
 			"Error: This SecurityID does not exists (%s)",
 			SecurityID)
-		return Balance, Position, SecurityAmount, TotalPayment, errMsg
+		return Balance, Position, SecurityAmount, PendingBalance, errMsg
 	}
 
-	return Balance, Position, SecurityAmount, TotalPayment, ""
+	return Balance, Position, SecurityAmount, PendingBalance, ""
 }
 
-func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, SecurityAmount int64, Payment int64, sender string, receiver string) (int64, int64, int64, error) {
+func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, SecurityAmount int64, Payment int64, sender string, receiver string) (int64, int64, int64, int64, error) {
 	senderAccount, err := getAccountStructFromID(stub, sender)
 	receiverAccount, err := getAccountStructFromID(stub, receiver)
 	var senderBalance int64
 	var receiverBalance int64
-	var senderTotalPayment int64
+	var senderPendingBalance int64
+	var receiverPendingBalance int64
 	if err != nil {
-		return senderBalance, receiverBalance, senderTotalPayment, err
+		return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err
 	}
 
 	var doflg bool
@@ -1058,7 +1080,8 @@ func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, S
 			senderAccount.Assets[key].Position -= Payment
 			senderAccount.Assets[key].TotalPayment += Payment
 			senderBalance = senderAccount.Assets[key].Balance
-			senderTotalPayment = senderAccount.Assets[key].TotalPayment
+			senderAccount.Assets[key].PendingBalance = senderBalance
+			senderPendingBalance = senderAccount.Assets[key].PendingBalance
 			doflg = true
 			break
 		}
@@ -1067,7 +1090,7 @@ func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, S
 		errMsg := fmt.Sprintf(
 			"Error: This SecurityID does not exists (%s)",
 			SecurityID)
-		return senderBalance, receiverBalance, senderTotalPayment, errors.New(errMsg)
+		return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, errors.New(errMsg)
 	}
 	if doflg == true {
 		for key, val := range receiverAccount.Assets {
@@ -1075,7 +1098,10 @@ func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, S
 				receiverAccount.Assets[key].SecurityAmount -= SecurityAmount
 				receiverAccount.Assets[key].Balance += Payment
 				receiverAccount.Assets[key].Position += Payment
+				receiverAccount.Assets[key].TotalPayment -= Payment
 				receiverBalance = receiverAccount.Assets[key].Balance
+				receiverAccount.Assets[key].PendingBalance = receiverBalance
+				receiverPendingBalance = receiverAccount.Assets[key].PendingBalance
 				doflg = true
 				break
 			}
@@ -1086,20 +1112,85 @@ func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, S
 		senderAccountAsBytes, err := json.Marshal(senderAccount)
 		err = stub.PutState(sender, senderAccountAsBytes)
 		if err != nil {
-			return senderBalance, receiverBalance, senderTotalPayment, err
+			return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err
 		}
 	}
 	if receiverBalance >= 0 {
 		receiverAccountAsBytes, err := json.Marshal(receiverAccount)
 		err = stub.PutState(receiver, receiverAccountAsBytes)
 		if err != nil {
-			return senderBalance, receiverBalance, senderTotalPayment, err
+			return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err
 		}
 	}
-	fmt.Printf("5.senderBalance= %d\n", senderBalance)
-	fmt.Printf("6.receiverBalance= %d\n", receiverBalance)
+	fmt.Printf("1.senderBalance= %d\n", senderBalance)
+	fmt.Printf("2.receiverBalance= %d\n", receiverBalance)
+	fmt.Printf("3.senderPendingBalance= %d\n", senderPendingBalance)
+	fmt.Printf("4.receiverPendingBalance= %d\n", receiverPendingBalance)
 
-	return senderBalance, receiverBalance, senderTotalPayment, nil
+	return senderBalance, receiverBalance, senderPendingBalance, receiverBalance, nil
+}
+
+func updateAccountPendingBalance(stub shim.ChaincodeStubInterface, SecurityID string, Payment int64, sender string, receiver string) (int64, int64, string) {
+
+	var senderPendingBalance int64
+	var receiverPendingBalance int64
+
+	senderAccount, err := getAccountStructFromID(stub, sender)
+
+	if err != nil {
+		return senderPendingBalance, receiverPendingBalance, "getAccountStructFromID,sender:" + sender
+	}
+
+	receiverAccount, err := getAccountStructFromID(stub, receiver)
+	if err != nil {
+		return senderPendingBalance, receiverPendingBalance, "getAccountStructFromID,receiver:" + receiver
+	}
+
+	var doflg bool
+	doflg = false
+	for key, val := range senderAccount.Assets {
+		if val.SecurityID == SecurityID {
+			senderAccount.Assets[key].PendingBalance -= Payment
+			senderPendingBalance = senderAccount.Assets[key].PendingBalance
+			doflg = true
+			break
+		}
+	}
+	if doflg != true {
+		errMsg := fmt.Sprintf(
+			"Error: This SecurityID does not exists (%s)",
+			SecurityID)
+		return senderPendingBalance, receiverPendingBalance, errMsg
+	}
+	if doflg == true {
+		for key, val := range receiverAccount.Assets {
+			if val.SecurityID == SecurityID {
+				receiverAccount.Assets[key].PendingBalance += Payment
+				receiverPendingBalance = receiverAccount.Assets[key].PendingBalance
+				doflg = true
+				break
+			}
+		}
+	}
+
+	if senderPendingBalance >= 0 {
+		senderAccountAsBytes, err := json.Marshal(senderAccount)
+		err = stub.PutState(sender, senderAccountAsBytes)
+		if err != nil {
+			return senderPendingBalance, receiverPendingBalance, "updateAccountPendingBalance putstate error,sender:" + sender
+		}
+	}
+	if receiverPendingBalance >= 0 {
+		receiverAccountAsBytes, err := json.Marshal(receiverAccount)
+		err = stub.PutState(receiver, receiverAccountAsBytes)
+		if err != nil {
+			return senderPendingBalance, receiverPendingBalance, "updateAccountPendingBalance putstate error,receiver:" + receiver
+		}
+	}
+	fmt.Printf("1.senderPendingBalance= %d\n", senderPendingBalance)
+	fmt.Printf("2.receiverPendingBalance= %d\n", receiverPendingBalance)
+
+	return senderPendingBalance, receiverPendingBalance, ""
 }
 
 func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Balance int64, Amount int64, sender string, receiver string) (int64, int64, error) {
@@ -1295,7 +1386,7 @@ func updateTransactionStatus(stub shim.ChaincodeStubInterface, TXID string, TXSt
 		transaction.TXStatus = "Waiting4Payment"
 	}
 	if TXStatus == "PaymentError" {
-		TXMemo = "轉入方款不足"
+		TXMemo = "款不足等待補款"
 		transaction.TXMemo = TXMemo
 		transaction.TXStatus = "PaymentError"
 	}
@@ -1434,7 +1525,7 @@ func updateQueuedTransactionApproveStatus(stub shim.ChaincodeStubInterface, TXKE
 		NewTXStatus = "Waiting4Payment"
 	}
 	if TXStatus == "PaymentError" {
-		TXMemo = "轉入方款不足"
+		TXMemo = "款不足等待補款"
 		NewTXStatus = "PaymentError"
 	}
 	if TXStatus == "Cancalled" {
@@ -1519,7 +1610,7 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 		NewTXStatus = "Waiting4Payment"
 	}
 	if TXStatus == "PaymentError" {
-		TXMemo = "轉入方款不足"
+		TXMemo = "款不足等待補款"
 		NewTXStatus = "PaymentError"
 	}
 	if TXStatus == "Cancalled" {
@@ -1586,14 +1677,15 @@ func updateHistoryTransactionApproveStatus(stub shim.ChaincodeStubInterface, HTX
 	return nil
 }
 
-func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, SecurityAmount int64, Payment int64, sender string, receiver string) (int64, int64, int64, error) {
+func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, SecurityAmount int64, Payment int64, sender string, receiver string) (int64, int64, int64, int64, error) {
 	senderAccount, err := getAccountStructFromID(stub, sender)
 	receiverAccount, err := getAccountStructFromID(stub, receiver)
 	var senderBalance int64
 	var receiverBalance int64
-	var senderTotalPayment int64
+	var senderPendingBalance int64
+	var receiverPendingBalance int64
 	if err != nil {
-		return senderBalance, receiverBalance, senderTotalPayment, err
+		return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err
 	}
 
 	var doflg bool
@@ -1605,6 +1697,8 @@ func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Se
 			senderAccount.Assets[key].Position += Payment
 			senderAccount.Assets[key].TotalPayment -= Payment
 			senderBalance = senderAccount.Assets[key].Balance
+			senderAccount.Assets[key].PendingBalance = senderBalance
+			senderPendingBalance = senderAccount.Assets[key].PendingBalance
 			doflg = true
 			break
 		}
@@ -1613,7 +1707,7 @@ func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Se
 		errMsg := fmt.Sprintf(
 			"Error: This SecurityID does not exists (%s)",
 			SecurityID)
-		return senderBalance, receiverBalance, senderTotalPayment, errors.New(errMsg)
+		return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, errors.New(errMsg)
 	}
 	if doflg == true {
 		for key, val := range receiverAccount.Assets {
@@ -1621,7 +1715,10 @@ func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Se
 				receiverAccount.Assets[key].SecurityAmount += SecurityAmount
 				receiverAccount.Assets[key].Balance -= Payment
 				receiverAccount.Assets[key].Position -= Payment
+				receiverAccount.Assets[key].TotalPayment += Payment
 				receiverBalance = receiverAccount.Assets[key].Balance
+				receiverAccount.Assets[key].PendingBalance = receiverBalance
+				receiverPendingBalance = receiverAccount.Assets[key].PendingBalance
 				doflg = true
 				break
 			}
@@ -1632,18 +1729,18 @@ func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Se
 		senderAccountAsBytes, err := json.Marshal(senderAccount)
 		err = stub.PutState(sender, senderAccountAsBytes)
 		if err != nil {
-			return senderBalance, receiverBalance, senderTotalPayment, err
+			return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err
 		}
 	}
 	if receiverBalance >= 0 {
 		receiverAccountAsBytes, err := json.Marshal(receiverAccount)
 		err = stub.PutState(receiver, receiverAccountAsBytes)
 		if err != nil {
-			return senderBalance, receiverBalance, senderTotalPayment, err
+			return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err
 		}
 	}
 
-	return senderBalance, receiverBalance, senderTotalPayment, nil
+	return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, nil
 }
 
 func updateTransactionTXHcode(stub shim.ChaincodeStubInterface, TXID string, TXHcode string) error {
@@ -1899,7 +1996,7 @@ func (s *SmartContract) securityCorrectTransfer(
 						newTX.TXMemo = ""
 						if TXType == "S" {
 							//轉出          轉入
-							senderBalance, receiverBalance, senderTotalPayment, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
+							senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
 							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXTo)
 							if BankFrom != BankTo {
 								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
@@ -1917,9 +2014,9 @@ func (s *SmartContract) securityCorrectTransfer(
 									break
 								}
 							}
-							if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
+							if (senderBalance < 0) || (receiverBalance < 0) || (senderPendingBalance < 0) || (receiverPendingBalance < 0) {
 								//return shim.Error("TxType=S - senderBalance or receiverBalance <0")
-								newTX.TXErrMsg = "TxType=S - senderBalance or receiverBalance or senderTotalPayment <0"
+								newTX.TXErrMsg = "TxType=S - senderBalance or receiverBalance or senderPendingBalance or receiverPendingBalance <0"
 								newTX.TXStatus = "Cancalled"
 								break
 							}
@@ -1927,7 +2024,7 @@ func (s *SmartContract) securityCorrectTransfer(
 						}
 						if TXType == "B" {
 							//轉出          轉入
-							senderBalance, receiverBalance, senderTotalPayment, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
+							senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
 							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
 							if BankFrom != BankTo {
 								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
@@ -1945,9 +2042,9 @@ func (s *SmartContract) securityCorrectTransfer(
 									break
 								}
 							}
-							if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
+							if (senderBalance < 0) || (receiverBalance < 0) || (senderPendingBalance < 0) || (receiverPendingBalance < 0) {
 								//return shim.Error("TxType=B - senderBalance or receiverBalance <0")
-								newTX.TXErrMsg = "TxType=B - senderBalance or receiverBalance or senderTotalPayment <0"
+								newTX.TXErrMsg = "TxType=B - senderBalance or receiverBalance or senderPendingBalance or receiverPendingBalance <0"
 								newTX.TXStatus = "Cancalled"
 								break
 							}
@@ -1978,9 +2075,9 @@ func (s *SmartContract) securityCorrectTransfer(
 									historyNewTX.Transactions[key].TXStatus = "PaymentError"
 									historyNewTX.TXStatus[key] = "PaymentError"
 									newTX.TXStatus = "PaymentError"
-									queuedTx.Transactions[key].TXMemo = "轉入方款不足"
-									historyNewTX.Transactions[key].TXMemo = "轉入方款不足"
-									newTX.TXMemo = "轉入方款不足"
+									queuedTx.Transactions[key].TXMemo = "款不足等待補款"
+									historyNewTX.Transactions[key].TXMemo = "款不足等待補款"
+									newTX.TXMemo = "款不足等待補款"
 									err := updateTransactionStatus(stub, val.TXID, "PaymentError", TXID)
 									if err != nil {
 										//return shim.Error(err.Error())
@@ -1998,9 +2095,9 @@ func (s *SmartContract) securityCorrectTransfer(
 										historyNewTX.Transactions[key].TXStatus = "PaymentError"
 										historyNewTX.TXStatus[key] = "PaymentError"
 										newTX.TXStatus = "PaymentError"
-										queuedTx.Transactions[key].TXMemo = "轉入方款不足"
-										historyNewTX.Transactions[key].TXMemo = "轉入方款不足"
-										newTX.TXMemo = "轉入方款不足"
+										queuedTx.Transactions[key].TXMemo = "款不足等待補款"
+										historyNewTX.Transactions[key].TXMemo = "款不足等待補款"
+										newTX.TXMemo = "款不足等待補款"
 										err := updateTransactionStatus(stub, val.TXID, "PaymentError", TXID)
 										if err != nil {
 											//return shim.Error(err.Error())
@@ -2258,17 +2355,23 @@ func validateCorrectTransaction(
 		return transaction, false, "Payment must be a positive value."
 	}
 	transaction.Payment = Payment
-	isPutToQueue, err := strconv.ParseBool(strings.ToLower(args[6]))
-	if err != nil {
-		return transaction, false, "isPutToQueue must be a boolean string."
+	senderPendingBalance, receiverPendingBalance, errMsg := updateAccountPendingBalance(stub, SecurityID, Payment, TXFrom, TXTo)
+	if errMsg != "" {
+		return transaction, true, errMsg
 	}
-	transaction.isPutToQueue = isPutToQueue
+	if senderPendingBalance <= 0 {
+		return transaction, true, "senderPendingBalance less equle to zero."
+	}
+	if receiverPendingBalance <= 0 {
+		return transaction, true, "receiverPendingBalance less equle to zero."
+	}
 
 	if TXType == "S" {
 		TXData1 = BankFrom + TXFrom + BankTo + TXTo + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
 		TXIndex = getSHA256(TXData1)
 		TXData2 = BankFrom + TXFrom + BankTo + TXTo + SecurityID
 		TXSIndex = getSHA256(TXData2)
+		transaction.TXFromPendingBalance = senderPendingBalance
 	}
 
 	if TXType == "B" {
@@ -2276,12 +2379,16 @@ func validateCorrectTransaction(
 		TXIndex = getSHA256(TXData1)
 		TXData2 = BankTo + TXTo + BankFrom + TXFrom + SecurityID
 		TXSIndex = getSHA256(TXData2)
+		transaction.TXFromPendingBalance = receiverPendingBalance
 	}
+
 	transaction.TXIndex = TXIndex
 	transaction.TXSIndex = TXSIndex
-	balance, position, securityamount, totalpayment, errMsg := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType)
+	balance, position, securityamount, pendingbalance, errMsg := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType)
+	transaction.TXFromBalance = balance
+	transaction.TXFromPosition = position
+	transaction.TXFromAmount = securityamount
 	if errMsg != "" && TXType == "S" {
-		//return transaction, false, err
 		transaction.TXMemo = "轉出方券不足"
 		//transaction.TXErrMsg = TXFrom + ":Payment > Balance"
 		transaction.TXErrMsg = errMsg
@@ -2289,12 +2396,10 @@ func validateCorrectTransaction(
 		fmt.Printf("balance: %s\n", balance)
 		fmt.Printf("position: %s\n", position)
 		fmt.Printf("securityamount: %s\n", securityamount)
-		return transaction, false, errMsg
+		fmt.Printf("pendingbalance: %s\n", pendingbalance)
+		return transaction, true, errMsg
 	}
-	transaction.TXFromBalance = balance
-	transaction.TXFromPosition = position
-	transaction.TXFromAmount = securityamount
-	transaction.TXFromTotalPayment = totalpayment
+
 	transaction.TXHcode = TXID
 	transaction.TXStatus = "Pending"
 
@@ -2306,7 +2411,7 @@ func validateCorrectTransaction(
 		return transaction, false, TXID + ":updateTransactionTXHcode execution failed."
 	}
 
-	return transaction, isPutToQueue, ""
+	return transaction, true, ""
 
 }
 
@@ -2324,7 +2429,7 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 		TXMemo = "日終交易取消"
 	}
 	if TXStatus == "PaymentError" {
-		TXMemo = "轉入方款不足"
+		TXMemo = "款不足等待補款"
 	}
 	if TXStatus == "Pending" {
 		TXMemo = "尚未比對"
@@ -2368,7 +2473,7 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 		BankTo := transaction.TXTo
 
 		if TXType == "S" {
-			senderBalance, receiverBalance, senderTotalPayment, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
+			senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
 			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXTo)
 			if BankFrom != BankTo {
 				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
@@ -2380,13 +2485,13 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 					return MatchedTXID, err
 				}
 			}
-			if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
-				return MatchedTXID, errors.New("senderBalance,receiverBalance,senderTotalPayment <0")
+			if (senderBalance < 0) || (receiverBalance < 0) || (senderPendingBalance < 0) || (receiverPendingBalance < 0) {
+				return MatchedTXID, errors.New("senderBalance,receiverBalance,senderPendingBalance,receiverPendingBalance <0")
 			}
 
 		}
 		if TXType == "B" {
-			senderBalance, receiverBalance, senderTotalPayment, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
+			senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
 			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
 			if BankFrom != BankTo {
 				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
@@ -2398,8 +2503,8 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 					return MatchedTXID, err
 				}
 			}
-			if (senderBalance < 0) || (receiverBalance < 0) || (senderTotalPayment < 0) {
-				return MatchedTXID, errors.New("senderBalance,receiverBalance,senderTotalPayment <0")
+			if (senderBalance < 0) || (receiverBalance < 0) || (senderPendingBalance < 0) || (receiverPendingBalance < 0) {
+				return MatchedTXID, errors.New("senderBalance,receiverBalance,senderPendingBalance,receiverPendingBalance <0")
 			}
 
 		}
@@ -2429,7 +2534,7 @@ func updateEndDayQueuedTransactionStatus(stub shim.ChaincodeStubInterface, TXKEY
 			TXMemo = "日終交易取消"
 		}
 		if TXStatus == "PaymentError" {
-			TXMemo = "轉入方款不足"
+			TXMemo = "款不足等待補款"
 		}
 		if TXStatus == "Pending" {
 			TXMemo = "尚未比對"
@@ -2494,7 +2599,7 @@ func updateEndDayHistoryTransactionStatus(stub shim.ChaincodeStubInterface, HTXK
 			TXMemo = "日終交易取消"
 		}
 		if TXStatus == "PaymentError" {
-			TXMemo = "轉入方款不足"
+			TXMemo = "款不足等待補款"
 		}
 		if TXStatus == "Pending" {
 			TXMemo = "尚未比對"

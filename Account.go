@@ -21,6 +21,7 @@ type Asset struct {
 	Balance        int64  `json:"Balance"`        //帳戶券項金額
 	Position       int64  `json:"Position"`       //帳戶券項金額
 	TotalPayment   int64  `json:"TotalPayment"`   //交易總計券項金額
+	PendingBalance int64  `json:"PendingBalance"` //未比對前餘額
 }
 
 type Account struct {
@@ -109,6 +110,7 @@ func (s *SmartContract) initAccount(
 	asset.Balance = Balance
 	asset.Position = Position
 	asset.TotalPayment = 0
+	asset.PendingBalance = Balance
 
 	account := Account{}
 	account.ObjectType = accountObjectType
@@ -244,6 +246,7 @@ func (s *SmartContract) updateAccount(
 		asset.Balance = Balance
 		asset.Position = Position
 		asset.TotalPayment = 0
+		asset.PendingBalance = Balance
 		account.Assets = append(account.Assets, asset)
 	}
 
@@ -689,6 +692,10 @@ func (s *SmartContract) queryAssetInfo(APIstub shim.ChaincodeStubInterface, args
 			buffer.WriteString(", \"TotalPayment\":")
 			buffer.WriteString("\"")
 			buffer.WriteString(strconv.FormatInt(val.TotalPayment, 10))
+			buffer.WriteString("\"")
+			buffer.WriteString(", \"PendingBalance\":")
+			buffer.WriteString("\"")
+			buffer.WriteString(strconv.FormatInt(val.PendingBalance, 10))
 			buffer.WriteString("\"")
 			buffer.WriteString("}")
 			bArrayMemberAlreadyWritten = true
