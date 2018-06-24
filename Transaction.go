@@ -223,11 +223,11 @@ func (s *SmartContract) submitApproveTransaction(
 			senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
 			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
 			if BankFrom != BankTo {
-				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
+				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
 				if err != nil {
 					return shim.Error(err.Error())
 				}
-				err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, true)
+				err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, false)
 				if err != nil {
 					return shim.Error(err.Error())
 				}
@@ -517,7 +517,7 @@ func (s *SmartContract) securityTransfer(
 							senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
 							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
 							if BankFrom != BankTo {
-								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
+								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
 								if err != nil {
 									//return shim.Error(err.Error())
 									newTX.TXErrMsg = "Failed to execute updateBankTotals TXFrom:" + TXFrom
@@ -525,7 +525,7 @@ func (s *SmartContract) securityTransfer(
 									newTX.TXMemo = "交易被取消"
 									break
 								}
-								err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, false)
+								err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, true)
 								if err != nil {
 									//return shim.Error(err.Error())
 									newTX.TXErrMsg = "Failed to execute updateBankTotals2 TXTo:" + TXTo
@@ -1137,19 +1137,17 @@ func updateAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, S
 			SecurityID)
 		return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, errors.New(errMsg)
 	}
-	if doflg == true {
-		for key, val := range receiverAccount.Assets {
-			if val.SecurityID == SecurityID {
-				receiverAccount.Assets[key].SecurityAmount -= SecurityAmount
-				receiverAccount.Assets[key].Balance += Payment
-				receiverAccount.Assets[key].Position += Payment
-				receiverAccount.Assets[key].TotalPayment -= Payment
-				receiverBalance = receiverAccount.Assets[key].Balance
-				receiverAccount.Assets[key].PendingBalance = receiverBalance
-				receiverPendingBalance = receiverAccount.Assets[key].PendingBalance
-				doflg = true
-				break
-			}
+	for key, val := range receiverAccount.Assets {
+		if val.SecurityID == SecurityID {
+			receiverAccount.Assets[key].SecurityAmount -= SecurityAmount
+			receiverAccount.Assets[key].Balance += Payment
+			receiverAccount.Assets[key].Position += Payment
+			receiverAccount.Assets[key].TotalPayment -= Payment
+			receiverBalance = receiverAccount.Assets[key].Balance
+			receiverAccount.Assets[key].PendingBalance = receiverBalance
+			receiverPendingBalance = receiverAccount.Assets[key].PendingBalance
+			doflg = true
+			break
 		}
 	}
 
@@ -1218,20 +1216,20 @@ func updateAccountPendingBalance(stub shim.ChaincodeStubInterface, SecurityID st
 		}
 	}
 
-	if senderPendingBalance >= 0 {
-		senderAccountAsBytes, err := json.Marshal(senderAccount)
-		err = stub.PutState(sender, senderAccountAsBytes)
-		if err != nil {
-			return senderPendingBalance, receiverPendingBalance, "updateAccountPendingBalance putstate error,sender:" + sender
-		}
+	//if senderPendingBalance >= 0 {
+	senderAccountAsBytes, err := json.Marshal(senderAccount)
+	err = stub.PutState(sender, senderAccountAsBytes)
+	if err != nil {
+		return senderPendingBalance, receiverPendingBalance, "updateAccountPendingBalance putstate error,sender:" + sender
 	}
-	if receiverPendingBalance >= 0 {
-		receiverAccountAsBytes, err := json.Marshal(receiverAccount)
-		err = stub.PutState(receiver, receiverAccountAsBytes)
-		if err != nil {
-			return senderPendingBalance, receiverPendingBalance, "updateAccountPendingBalance putstate error,receiver:" + receiver
-		}
+	//}
+	//if receiverPendingBalance >= 0 {
+	receiverAccountAsBytes, err := json.Marshal(receiverAccount)
+	err = stub.PutState(receiver, receiverAccountAsBytes)
+	if err != nil {
+		return senderPendingBalance, receiverPendingBalance, "updateAccountPendingBalance putstate error,receiver:" + receiver
 	}
+	//}
 	fmt.Printf("1.senderPendingBalance= %d\n", senderPendingBalance)
 	fmt.Printf("2.receiverPendingBalance= %d\n", receiverPendingBalance)
 
@@ -1254,21 +1252,7 @@ func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, B
 	doflg = false
 	for key, val := range Security.Owners {
 		if val.OwnedAccountID == sender {
-			if Security.Owners[key].OwnedBalance < Balance {
-				errMsg := fmt.Sprintf(
-					"Error: This OwnedAccountID of OwnedBalance<Balance (%s)",
-					sender)
-				return senderBalance, receiverBalance, errors.New(errMsg)
-				break
-			}
 			Security.Owners[key].OwnedBalance -= Balance
-			if Security.Owners[key].OwnedAmount < Amount {
-				errMsg := fmt.Sprintf(
-					"Error: This OwnedAccountID of OwnedAmount<Amount (%s)",
-					sender)
-				return senderBalance, receiverBalance, errors.New(errMsg)
-				break
-			}
 			Security.Owners[key].OwnedAmount -= Amount
 			senderBalance = Security.Owners[key].OwnedBalance
 			doflg = true
@@ -1312,13 +1296,13 @@ func updateSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, B
 		}
 	}
 
-	if senderBalance >= 0 || receiverBalance >= 0 {
-		SecurityAsBytes, err := json.Marshal(Security)
-		err = stub.PutState(SecurityID, SecurityAsBytes)
-		if err != nil {
-			return senderBalance, receiverBalance, err
-		}
+	//if senderBalance >= 0 || receiverBalance >= 0 {
+	SecurityAsBytes, err := json.Marshal(Security)
+	err = stub.PutState(SecurityID, SecurityAsBytes)
+	if err != nil {
+		return senderBalance, receiverBalance, err
 	}
+	//}
 
 	fmt.Printf("7.senderBalance= %d\n", senderBalance)
 	fmt.Printf("8.receiverBalance= %d\n", receiverBalance)
@@ -1350,21 +1334,7 @@ func resetSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Ba
 			doflg = true
 		}
 		if val.OwnedAccountID == receiver {
-			if Security.Owners[key].OwnedBalance < Balance {
-				errMsg := fmt.Sprintf(
-					"Error: This OwnedAccountID of OwnedBalance<Balance (%s)",
-					sender)
-				return senderBalance, receiverBalance, errors.New(errMsg)
-				break
-			}
 			Security.Owners[key].OwnedBalance -= Balance
-			if Security.Owners[key].OwnedAmount < Amount {
-				errMsg := fmt.Sprintf(
-					"Error: This OwnedAccountID of OwnedAmount<Amount (%s)",
-					sender)
-				return senderBalance, receiverBalance, errors.New(errMsg)
-				break
-			}
 			Security.Owners[key].OwnedAmount -= Amount
 			receiverBalance = Security.Owners[key].OwnedBalance
 			doflg = true
@@ -1401,13 +1371,13 @@ func resetSecurityAmount(stub shim.ChaincodeStubInterface, SecurityID string, Ba
 		}
 	}
 
-	if senderBalance >= 0 || receiverBalance >= 0 {
-		SecurityAsBytes, err := json.Marshal(Security)
-		err = stub.PutState(SecurityID, SecurityAsBytes)
-		if err != nil {
-			return senderBalance, receiverBalance, err
-		}
+	//if senderBalance >= 0 || receiverBalance >= 0 {
+	SecurityAsBytes, err := json.Marshal(Security)
+	err = stub.PutState(SecurityID, SecurityAsBytes)
+	if err != nil {
+		return senderBalance, receiverBalance, err
 	}
+	//}
 
 	fmt.Printf("7.senderBalance= %d\n", senderBalance)
 	fmt.Printf("8.receiverBalance= %d\n", receiverBalance)
@@ -1776,19 +1746,18 @@ func resetAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Se
 			SecurityID)
 		return senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, errors.New(errMsg)
 	}
-	if doflg == true {
-		for key, val := range receiverAccount.Assets {
-			if val.SecurityID == SecurityID {
-				receiverAccount.Assets[key].SecurityAmount += SecurityAmount
-				receiverAccount.Assets[key].Balance -= Payment
-				receiverAccount.Assets[key].Position -= Payment
-				receiverAccount.Assets[key].TotalPayment += Payment
-				receiverBalance = receiverAccount.Assets[key].Balance
-				receiverAccount.Assets[key].PendingBalance = receiverBalance
-				receiverPendingBalance = receiverAccount.Assets[key].PendingBalance
-				doflg = true
-				break
-			}
+
+	for key, val := range receiverAccount.Assets {
+		if val.SecurityID == SecurityID {
+			receiverAccount.Assets[key].SecurityAmount += SecurityAmount
+			receiverAccount.Assets[key].Balance -= Payment
+			receiverAccount.Assets[key].Position -= Payment
+			receiverAccount.Assets[key].TotalPayment += Payment
+			receiverBalance = receiverAccount.Assets[key].Balance
+			receiverAccount.Assets[key].PendingBalance = receiverBalance
+			receiverPendingBalance = receiverAccount.Assets[key].PendingBalance
+			doflg = true
+			break
 		}
 	}
 
@@ -2206,7 +2175,7 @@ func (s *SmartContract) securityCorrectTransfer(
 							senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := updateAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
 							senderBalance, receiverBalance, err = updateSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
 							if BankFrom != BankTo {
-								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
+								err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
 								if err != nil {
 									//return shim.Error(err.Error())
 									newTX.TXErrMsg = "Failed to execute updateBankTotals TXFrom:" + TXFrom
@@ -2214,7 +2183,7 @@ func (s *SmartContract) securityCorrectTransfer(
 									newTX.TXMemo = "交易被取消"
 									break
 								}
-								err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, false)
+								err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, true)
 								if err != nil {
 									//return shim.Error(err.Error())
 									newTX.TXErrMsg = "Failed to execute updateBankTotals2 TXTo:" + TXTo
@@ -2680,7 +2649,7 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 		TXFrom := transaction.TXFrom
 		TXTo := transaction.TXTo
 		BankFrom := transaction.BankFrom
-		BankTo := transaction.TXTo
+		BankTo := transaction.BankTo
 
 		if TXType == "S" {
 			senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXFrom, TXTo)
@@ -2704,11 +2673,11 @@ func updateEndDayTransactionStatus(stub shim.ChaincodeStubInterface, TXID string
 			senderBalance, receiverBalance, senderPendingBalance, receiverPendingBalance, err := resetAccountBalance(stub, SecurityID, SecurityAmount, Payment, TXTo, TXFrom)
 			senderBalance, receiverBalance, err = resetSecurityAmount(stub, SecurityID, Payment, SecurityAmount, TXTo, TXFrom)
 			if BankFrom != BankTo {
-				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, false)
+				err = updateBankTotals(stub, TXFrom, SecurityID, TXFrom, Payment, SecurityAmount, true)
 				if err != nil {
 					return MatchedTXID, err
 				}
-				err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, true)
+				err = updateBankTotals(stub, TXTo, SecurityID, TXTo, Payment, SecurityAmount, false)
 				if err != nil {
 					return MatchedTXID, err
 				}
