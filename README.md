@@ -102,6 +102,8 @@ Navigate to the chaincode-docker-devmode directory of the fabric-samples clone:
 1. queryAllTransactionKeys(APIstub, args)
 1. queryQueuedTransactionStatus(APIstub, args)
 1. queryHistoryTransactionStatus(APIstub, args)
+1. updateQueuedTransactionHcode(APIstub, args)
+1. updateHistoryTransactionHcode(APIstub, args)
 
 
 ### Other Chaincode Functions
