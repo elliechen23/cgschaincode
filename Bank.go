@@ -25,6 +25,14 @@ type Bank struct {
 	BankAccounts []string    `json:"BankAccounts"` //清算銀行下客戶帳號
 }
 
+/*
+1.銀行代號
+2.銀行名稱
+3.銀行簡稱
+4.清算銀行債券部位
+5.清算銀行客戶帳號
+*/
+
 type BankTotal struct {
 	SecurityID   string `json:"SecurityID"`   //公債代號
 	TotalBalance int64  `json:"TotalBalance"` //總券數
@@ -32,6 +40,14 @@ type BankTotal struct {
 	CreateTime   string `json:"CreateTime"`
 	UpdateTime   string `json:"UpdateTime"`
 }
+
+/*
+1.公債代號
+2.清算銀行總券數
+3.清算銀行總款數
+4.建立時間
+5.更新時間
+*/
 
 /*
 peer chaincode invoke -n mycc1 -c '{"Args":["initBank", "BANK002" , "BANK 002" , "002" ]}' -C myc

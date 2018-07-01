@@ -24,6 +24,15 @@ type Asset struct {
 	PendingBalance int64  `json:"PendingBalance"` //未比對前餘額
 }
 
+/*
+1.公債代號
+2.帳戶款項金額
+3.帳戶券項可動用餘額
+4.帳戶券項餘額
+5.交易總計券項金額
+6.未比對前可動用餘額
+*/
+
 type Account struct {
 	ObjectType string  `json:"docType"`   // default set to "account"
 	AccountID  string  `json:"AccountID"` // account ID
@@ -34,6 +43,16 @@ type Account struct {
 	Status     string  `json:"Status"`    // Status values ( NORMAL, PAUSED )
 	Assets     []Asset `json:"Assets"`
 }
+
+/*
+1.客戶帳號
+2.清算銀行代號
+3.清算銀行名稱
+4.客戶名稱
+5.存戶類別編號
+6.帳戶狀態
+7.客戶持有公債
+*/
 
 //peer chaincode invoke -n mycc2 -c '{"Args":["initAccount", "002000000001" , "002" , "BANK002" , "CUST001" , "00001", "A06101", "1000000" , "1000000" , "1000000", "0" ]}' -C myc
 func (s *SmartContract) initAccount(

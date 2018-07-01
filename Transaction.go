@@ -60,6 +60,33 @@ type Transaction struct {
 }
 
 /*
+1.交易序號
+2.交易型態
+3.轉出銀行帳號
+4.轉入銀行帳號
+5.轉出銀行代號
+6.轉入銀行代號
+7.公債代號
+8.交易金額
+9.交易面額
+10.是否放入交易暫存檔
+11.交易狀態
+12.是否圈存
+13.建立時間
+14.更新時間
+15.交易索引
+16.交易短索引
+17.原交易序號
+18.未交易前的帳戶券數
+19.未交易前的帳戶券數
+20.未交易前的帳戶款數
+21.未交易前的帳戶尚未比對可動用餘額
+22.比對交易序號
+23.交易說明
+24.錯誤訊息
+*/
+
+/*
 TXData1 = BankFrom + TXFrom + BankTo + TXTo + SecurityID + strconv.FormatInt(SecurityAmount, 10) + strconv.FormatInt(Payment, 10)
 TXIndex = getSHA256(TXData1)
 TXData2 = BankFrom + TXFrom + BankTo + TXTo + SecurityID
@@ -75,6 +102,14 @@ type QueuedTransaction struct {
 	Transactions []Transaction `json:"Transactions"`
 }
 
+/*
+1.交易日期：
+2.交易序號資料：
+3.交易索引資料：
+4.交易短索引資料：
+5.當日交易資料：
+*/
+
 type TransactionHistory struct {
 	ObjectType   string        `json:"docType"` // default set to "HistoryTX"
 	TXKEY        string        `json:"TXKEY"`   //TXDATE(HYYYYMMDD)
@@ -85,6 +120,16 @@ type TransactionHistory struct {
 	TXKinds      []string      `json:"TXKinds"`
 	Transactions []Transaction `json:"Transactions"`
 }
+
+/*
+1.交易日期
+2.交易序號資料
+3.交易索引資料
+4.交易短索引資料
+5.交易狀態資料
+6.交易種類資料
+67.當日交易資料
+*/
 
 /*
 peer chaincode invoke -n mycc -c '{"Args":["submitApproveTransaction", "BANK004B00400000000120180415070724","0","BANKCBC"]}' -C myc -v 9.0
