@@ -452,7 +452,7 @@ func (s *SmartContract) securityTransfer(
 	fmt.Printf("3.isPutInQueue=%s\n", isPutInQueue)
 
 	if isPutInQueue == true {
-
+		newTX.isPutToQueue = true
 		queueAsBytes, err := stub.GetState(TXKEY)
 		if err != nil {
 			//return shim.Error(err.Error())
@@ -2100,6 +2100,7 @@ func (s *SmartContract) securityCorrectTransfer(
 	fmt.Printf("1.ApproveFlagCorrect=%s\n", ApproveFlag)
 
 	if isPutInQueue == true {
+		newTX.isPutToQueue = true
 		fmt.Printf("2.TXKEYCorrect=%s\n", TXKEY)
 
 		queueAsBytes, err := stub.GetState(TXKEY)
@@ -2517,6 +2518,7 @@ func validateCorrectTransaction(
 	if len(args[7]) <= 0 {
 		return transaction, false, "TXID flag must be a non-empty string."
 	}
+
 	TXID = strings.ToUpper(args[7])
 	sourceTX, err := getTransactionStructFromID(stub, TXID)
 	if sourceTX.TXStatus != "Pending" {
