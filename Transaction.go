@@ -205,7 +205,7 @@ func (s *SmartContract) submitApproveTransaction(
 		isApproved = false
 		NewStatus = "Cancelled2"
 	} else if ApproveFlag == approved5 {
-		_, _, securityamount, _, errMsg := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType)
+		_, _, securityamount, _, errMsg := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType, -1)
 		fmt.Printf("0-1.Account securityamount=%s\n", securityamount)
 		fmt.Printf("0-2.Transaction SecurityAmount=%s\n", SecurityAmount)
 		fmt.Printf("0-3.Approved errMsg=%s\n", errMsg)
@@ -624,7 +624,7 @@ func (s *SmartContract) securityTransfer(
 										break
 									}
 								} else if ApproveFlag == approved5 {
-									_, _, securityamount, _, _ := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType)
+									_, _, securityamount, _, _ := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType, -1)
 									fmt.Printf("1-1.Account securityamount=%s\n", securityamount)
 									fmt.Printf("1-2.Transaction SecurityAmount=%s\n", SecurityAmount)
 									fmt.Printf("1-3.Approved errMsg=%s\n", errMsg)
@@ -930,7 +930,7 @@ func validateTransaction(
 
 	transaction.TXIndex = TXIndex
 	transaction.TXSIndex = TXSIndex
-	balance, position, securityamount, pendingbalance, errMsg := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType)
+	balance, position, securityamount, pendingbalance, errMsg := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType, senderPendingBalance)
 	transaction.TXFromBalance = balance
 	transaction.TXFromPosition = position
 	transaction.TXFromAmount = securityamount
@@ -1080,7 +1080,7 @@ func getMD5Str(myData string) string {
 	return encodeStr
 }
 
-func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Payment int64, Amount int64, sender string, TXType string) (int64, int64, int64, int64, string) {
+func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Payment int64, Amount int64, sender string, TXType string, senderPendingBalance int64) (int64, int64, int64, int64, string) {
 	senderAccount, err := getAccountStructFromID(stub, sender)
 	var Balance int64
 	var Position int64
@@ -1104,6 +1104,9 @@ func checkAccountBalance(stub shim.ChaincodeStubInterface, SecurityID string, Pa
 			Balance = senderAccount.Assets[key].Balance
 			Position = senderAccount.Assets[key].Position
 			PendingBalance = senderAccount.Assets[key].PendingBalance
+			if senderPendingBalance >= 0 {
+				PendingBalance = senderPendingBalance
+			}
 			fmt.Printf("1.checkAccountBalance: SecurityAmount=%d\n", SecurityAmount)
 			fmt.Printf("1.checkAccountBalance: Balance=%d\n", Balance)
 			fmt.Printf("1.checkAccountBalance: Position=%d\n", Position)
@@ -1238,7 +1241,11 @@ func updateAccountPendingBalance(stub shim.ChaincodeStubInterface, SecurityID st
 	doflg = false
 	for key, val := range senderAccount.Assets {
 		if val.SecurityID == SecurityID {
-			senderAccount.Assets[key].PendingBalance -= Payment
+			if senderAccount.Assets[key].PendingBalance < 0 && senderAccount.Assets[key].Balance > Payment {
+				senderAccount.Assets[key].PendingBalance = senderAccount.Assets[key].Balance
+			} else {
+				senderAccount.Assets[key].PendingBalance -= Payment
+			}
 			senderPendingBalance = senderAccount.Assets[key].PendingBalance
 			doflg = true
 			break
@@ -1253,7 +1260,11 @@ func updateAccountPendingBalance(stub shim.ChaincodeStubInterface, SecurityID st
 	if doflg == true {
 		for key, val := range receiverAccount.Assets {
 			if val.SecurityID == SecurityID {
-				receiverAccount.Assets[key].PendingBalance += Payment
+				if senderAccount.Assets[key].PendingBalance < 0 && senderAccount.Assets[key].Balance > Payment {
+					receiverAccount.Assets[key].PendingBalance = receiverAccount.Assets[key].Balance
+				} else {
+					receiverAccount.Assets[key].PendingBalance += Payment
+				}
 				receiverPendingBalance = receiverAccount.Assets[key].PendingBalance
 				doflg = true
 				break
@@ -2283,7 +2294,7 @@ func (s *SmartContract) securityCorrectTransfer(
 										break
 									}
 								} else if ApproveFlag == approved5 {
-									_, _, securityamount, _, _ := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType)
+									_, _, securityamount, _, _ := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType, -1)
 									fmt.Printf("1-1.Account securityamount=%s\n", securityamount)
 									fmt.Printf("1-2.Transaction SecurityAmount=%s\n", SecurityAmount)
 									fmt.Printf("1-3.Approved errMsg=%s\n", errMsg)
@@ -2599,7 +2610,7 @@ func validateCorrectTransaction(
 
 	transaction.TXIndex = TXIndex
 	transaction.TXSIndex = TXSIndex
-	balance, position, securityamount, pendingbalance, errMsg := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType)
+	balance, position, securityamount, pendingbalance, errMsg := checkAccountBalance(stub, SecurityID, Payment, SecurityAmount, TXFrom, TXType, senderPendingBalance)
 	transaction.TXFromBalance = balance
 	transaction.TXFromPosition = position
 	transaction.TXFromAmount = securityamount
