@@ -1243,6 +1243,8 @@ func updateAccountPendingBalance(stub shim.ChaincodeStubInterface, SecurityID st
 		if val.SecurityID == SecurityID {
 			if senderAccount.Assets[key].PendingBalance <= 0 && senderAccount.Assets[key].Balance > Payment {
 				senderAccount.Assets[key].PendingBalance = senderAccount.Assets[key].Balance
+			} else if senderAccount.Assets[key].PendingBalance > 0 && senderAccount.Assets[key].Balance < Payment {
+				senderAccount.Assets[key].PendingBalance = senderAccount.Assets[key].Balance
 			} else {
 				senderAccount.Assets[key].PendingBalance -= Payment
 			}
@@ -1261,6 +1263,8 @@ func updateAccountPendingBalance(stub shim.ChaincodeStubInterface, SecurityID st
 		for key, val := range receiverAccount.Assets {
 			if val.SecurityID == SecurityID {
 				if senderAccount.Assets[key].PendingBalance <= 0 && senderAccount.Assets[key].Balance > Payment {
+					receiverAccount.Assets[key].PendingBalance = receiverAccount.Assets[key].Balance
+				} else if senderAccount.Assets[key].PendingBalance > 0 && senderAccount.Assets[key].Balance < Payment {
 					receiverAccount.Assets[key].PendingBalance = receiverAccount.Assets[key].Balance
 				} else {
 					receiverAccount.Assets[key].PendingBalance += Payment
